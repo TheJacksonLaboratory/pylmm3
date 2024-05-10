@@ -44,10 +44,13 @@ Ensure you have Python 3 installed on your system. pylmm is compatible with Pyth
 
 3. **Install the Requirements**:
    Install the required Python packages using pip. It is recommended to upgrade pip to the latest version before installing dependencies:
+
    ```bash
    pip install --upgrade pip; pip install -r requirements.txt
    ```
+
 4. **Install pylmm**:
+
    ```bash
    pip install .
    ```
