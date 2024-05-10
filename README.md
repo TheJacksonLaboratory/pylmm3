@@ -1,7 +1,7 @@
 
-## pylmm - A lightweight linear mixed-model solver
+## pylmm3 - A lightweight linear mixed-model solver (Python 3)
 
-pylmm is a fast and lightweight linear mixed-model (LMM) solver for use in genome-wide association studies (GWAS).
+pylmm is a fast and lightweight linear mixed-model (LMM) solver for use in genome-wide association studies (GWAS).  This repository refactors the code to work with Python 3.
 
 pylmm has a standalone program for running association studies called pylmmGWAS.  It can also be used as a python module to build your own custom programs.  If you want to create your own code, look at example.py for some basic usage patterns.  If you want to run basic GWAS analysis, the command below, which uses example data might be a helpful guide.
 
