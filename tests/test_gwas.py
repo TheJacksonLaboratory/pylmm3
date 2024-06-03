@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from pylmm.lmm import GWAS  # Ensure this module is the same used in Python 2 but compatible with Python 3
+from pylmm3.lmm import GWAS  # Ensure this module is the same used in Python 2 but compatible with Python 3
 
 # I generated this data by using the python 2 pylmm library.
 data_path = ".local/gwas/"

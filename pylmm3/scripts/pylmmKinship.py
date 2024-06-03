@@ -16,8 +16,8 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from pylmm import input
-from pylmm.lmm import calculateKinship
+from pylmm3 import input
+from pylmm3.lmm import calculateKinship
 from scipy import linalg
 import numpy as np
 import os

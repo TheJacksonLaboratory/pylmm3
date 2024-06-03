@@ -17,8 +17,8 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 from optparse import OptionParser, OptionGroup
-from pylmm import input
-from pylmm.lmm import LMM
+from pylmm3 import input
+from pylmm3.lmm import LMM
 from scipy import linalg
 import numpy as np
 import os

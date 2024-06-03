@@ -8,7 +8,7 @@ pylmm has a standalone program for running association studies called pylmmGWAS.
 ### An Example Command (GWAS):
 
 ```
-python -m pylmm.scripts.pylmmGWAS -v --bfile data/snps.132k.clean.noX --kfile data/snps.132k.clean.noX.pylmm.kin --phenofile data/snps.132k.clean.noX.fake.phenos out.foo
+python -m pylmm3.scripts.pylmmGWAS -v --bfile data/snps.132k.clean.noX --kfile data/snps.132k.clean.noX.pylmm.kin --phenofile data/snps.132k.clean.noX.fake.phenos out.foo
 ```
 
 The GWAS program pylmmGWAS.py reads PLINK formated input files (BED or TPED only).  There is also an option to use "EMMA" formatted files.  We included this in order to make it easier for people using EMMA currently to try pylmm.  
@@ -16,7 +16,7 @@ The GWAS program pylmmGWAS.py reads PLINK formated input files (BED or TPED only
 ### An Example Command (Kinship):
 
 ```
-python -m pylmm.scripts.pylmmKinship --bfile data/snps.132k.clean.noX kinship_matrix_output.txt
+python -m pylmm3.scripts.pylmmKinship --bfile data/snps.132k.clean.noX kinship_matrix_output.txt
 ```
 
 The kinship matrix file can be calculated using pylmmKinship.py which also takes PLINK or EMMA files as input.  The kinship matrix output is just a plain text file and follows the same format as that used by EMMA, so that you can use pre-computed kinship matrices from EMMA as well, or any other program for that matter.
@@ -34,7 +34,7 @@ Ensure you have Python 3 installed on your system. pylmm is compatible with Pyth
 
    ```bash
    git clone git@bitbucket.org:jacksonlaboratory/pylmm3.git
-   cd pylmm
+   cd pylmm3
    ```
 
 2.  **Install Poetry**

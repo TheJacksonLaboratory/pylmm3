@@ -7,3 +7,4 @@ data/*
 build
 .local
 .DS_Store
+dist

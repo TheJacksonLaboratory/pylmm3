@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Python 3 implementation of Pylmm"
 authors = ["Your Name <you@example.com>"]
 license = "AGPL-3.0-or-later"
-repository = "https://bitbucket.org/jacksonlaboratory/pylmm3/src/master/scripts/pylmmKinship.py"
+repository = "https://bitbucket.org/jacksonlaboratory/pylmm3/src/master"
 readme = "README.md"
 
 [tool.poetry.dependencies]
@@ -16,9 +16,17 @@ scipy = "^1.7"
 pytest = "^6.0"
 
 [tool.poetry.scripts]
-pylmmGWAS = 'scripts.pylmmGWAS:main'
-pylmmKinship = 'scripts.pylmmKinship:main'
+pylmmGWAS = "pylmm.scripts.pylmmGWAS:main"
+pylmmKinship = "pylmm.scripts.pylmmKinship:main"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+# Specify the include and exclude files in the [tool.poetry] section
+include = [
+    "pylmm/**",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml"
+]

@@ -1,5 +1,5 @@
 import numpy as np
-from pylmm.lmm import LMM  # Make sure the LMM class is compatible with Python 3
+from pylmm3.lmm import LMM  # Make sure the LMM class is compatible with Python 3
 
 # I generated this data by using the python 2 pylmm library.
 prefix=".local/lmm/"
