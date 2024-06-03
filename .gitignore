@@ -3,6 +3,7 @@ data/*
 *env
 *.egg-info
 *.foo
+*_output.txt
 build
 .local
 .DS_Store
