@@ -19,7 +19,7 @@
 
 import sys
 import numpy as np
-from pylmm.lmm import LMM
+from pylmm3.lmm import LMM
 
 
 def fitTwo(y, K1, K2, X0=None, wgrids=100):

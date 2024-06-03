@@ -5,13 +5,21 @@ pylmm is a fast and lightweight linear mixed-model (LMM) solver for use in genom
 
 pylmm has a standalone program for running association studies called pylmmGWAS.  It can also be used as a python module to build your own custom programs.  If you want to create your own code, look at example.py for some basic usage patterns.  If you want to run basic GWAS analysis, the command below, which uses example data might be a helpful guide.
 
-### An Example Command:
+### An Example Command (GWAS):
 
 ```
-python pylmmGWAS.py -v --bfile data/snps.132k.clean.noX --kfile data/snps.132k.clean.noX.pylmm.kin --phenofile data/snps.132k.clean.noX.fake.phenos out.foo
+python -m pylmm3.scripts.pylmmGWAS -v --bfile data/snps.132k.clean.noX --kfile data/snps.132k.clean.noX.pylmm.kin --phenofile data/snps.132k.clean.noX.fake.phenos out.foo
 ```
 
-The GWAS program pylmmGWAS.py reads PLINK formated input files (BED or TPED only).  There is also an option to use "EMMA" formatted files.  We included this in order to make it easier for people using EMMA currently to try pylmm.  The kinship matrix file can be calculated using pylmmKinship.py which also takes PLINK or EMMA files as input.  The kinship matrix output is just a plain text file and follows the same format as that used by EMMA, so that you can use pre-computed kinship matrices from EMMA as well, or any other program for that matter.
+The GWAS program pylmmGWAS.py reads PLINK formated input files (BED or TPED only).  There is also an option to use "EMMA" formatted files.  We included this in order to make it easier for people using EMMA currently to try pylmm.  
+
+### An Example Command (Kinship):
+
+```
+python -m pylmm3.scripts.pylmmKinship --bfile data/snps.132k.clean.noX kinship_matrix_output.txt
+```
+
+The kinship matrix file can be calculated using pylmmKinship.py which also takes PLINK or EMMA files as input.  The kinship matrix output is just a plain text file and follows the same format as that used by EMMA, so that you can use pre-computed kinship matrices from EMMA as well, or any other program for that matter.
 
 ## Installation
 
@@ -25,37 +33,29 @@ Ensure you have Python 3 installed on your system. pylmm is compatible with Pyth
    Start by cloning the pylmm repository to your local machine using git:
 
    ```bash
-   git clone https://github.com/nickFurlotte/pylmm
-   cd pylmm
+   git clone git@bitbucket.org:jacksonlaboratory/pylmm3.git
+   cd pylmm3
    ```
+
+2.  **Install Poetry**
+If you haven't already, install Poetry, a dependency management tool for Python:
+
+    ```bash
+    curl -sSL https://install.python-poetry.org | python3 -
+    ```
 
 2. **Create a Virtual Environment**:
-   Create a Python virtual environment named pylmm-env for the pylmm project. This will help manage dependencies and isolate them from your global Python environment.
+   Create a Python virtual environment and install the dependencies using Poetry:
 
    ```bash
-   python -m venv pylmm-env
+   poetry install
    ```
 
-   Activate the virtual environment:
+4. **Activate the virtual environment**
 
    ```bash
-   source pylmm-env/bin/activate
+   poetry shell
    ```
-
-3. **Install the Requirements**:
-   Install the required Python packages using pip. It is recommended to upgrade pip to the latest version before installing dependencies:
-
-   ```bash
-   pip install --upgrade pip; pip install -r requirements.txt
-   ```
-
-4. **Install pylmm**:
-
-   ```bash
-   pip install .
-   ```
-
-
 
 pylmm is offered under the GNU Affero GPL (https://www.gnu.org/licenses/why-affero-gpl.html).
 
