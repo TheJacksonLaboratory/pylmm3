@@ -25,17 +25,17 @@ The kinship matrix file can be calculated using pylmmKinship.py which also takes
 
 ### Prerequisites
 
-Ensure you have Python 3 installed on your system. pylmm is compatible with Python 3 and requires numpy and scipy. 
+Ensure you have Python 3 installed on your system. pylmm is compatible with Python 3 and requires numpy and scipy.  Additionally, pylmm3 is available on <a href="https://test.pypi.org/project/pylmm3/">Pypi</a>. 
 
 ### Steps
 
 1. **Clone the Repository**:
    Start by cloning the pylmm repository to your local machine using git:
 
-   ```bash
-   git clone git@bitbucket.org:jacksonlaboratory/pylmm3.git
-   cd pylmm3
-   ```
+    ```bash
+    git clone git@bitbucket.org:jacksonlaboratory/pylmm3.git
+    cd pylmm3
+    ```
 
 2.  **Install Poetry**
 If you haven't already, install Poetry, a dependency management tool for Python:
@@ -47,15 +47,15 @@ If you haven't already, install Poetry, a dependency management tool for Python:
 2. **Create a Virtual Environment**:
    Create a Python virtual environment and install the dependencies using Poetry:
 
-   ```bash
-   poetry install
-   ```
+    ```bash
+    poetry install
+    ```
 
 4. **Activate the virtual environment**
 
-   ```bash
-   poetry shell
-   ```
+    ```bash
+    poetry shell
+    ```
 
 pylmm is offered under the GNU Affero GPL (https://www.gnu.org/licenses/why-affero-gpl.html).
 
