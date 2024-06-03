@@ -33,7 +33,7 @@ Ensure you have Python 3 installed on your system. pylmm is compatible with Pyth
    Start by cloning the pylmm repository to your local machine using git:
 
    ```bash
-   git clone https://github.com/nickFurlotte/pylmm
+   git clone git@bitbucket.org:jacksonlaboratory/pylmm3.git
    cd pylmm
    ```
 
