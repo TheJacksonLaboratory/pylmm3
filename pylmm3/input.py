@@ -233,8 +233,11 @@ class plink:
 
     def normalizeGenotype(self, G):
         x = ~np.isnan(G)
-        if not len(G[x]):
-            return G[x]
+
+        # All genotypes missing: keep original length & NaNs
+        if not x.any():
+            return G
+
         m = G[x].mean()
         if G[x].var() == 0:
             s = 1.0
@@ -247,6 +250,7 @@ class plink:
             G = (G - m) / s
 
         return G
+    
 
     def getPhenos(self, phenoFile=None):
         if not phenoFile:

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pylmm3"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python 3 implementation of Pylmm"
 authors = ["Your Name <you@example.com>"]
 license = "AGPL-3.0-or-later"
