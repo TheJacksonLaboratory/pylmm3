@@ -213,10 +213,10 @@ class LMM:
         self.Y = Y.reshape((self.N, 1))
         self.X0 = X0
 
-        if sum(self.Kva < 1e-6):
+        n_clamped = int((self.Kva < 1e-6).sum())
+        if n_clamped:
             if self.verbose:
-                sys.stderr.write("Cleaning %d eigen values\n" %
-                                 (sum(self.Kva < 0)))
+                sys.stderr.write("Clamping %d near-zero eigenvalues to 1e-6\n" % n_clamped)
             self.Kva[self.Kva < 1e-6] = 1e-6
 
         self.transform()
@@ -344,7 +344,7 @@ class LMM:
         L, beta, sigma, betaSTDERR = self.LL(hmax, X, stack=False, REML=REML)
 
         self.H = H
-        self.optH = hmax.sum()
+        self.optH = hmax
         self.optLL = L
         self.optBeta = beta
         self.optSigma = sigma.sum()

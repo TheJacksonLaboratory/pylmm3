@@ -138,9 +138,11 @@ class plink:
 
         magicNumber = self.fhandle.read(2)
         order = self.fhandle.read(1)
-        if not order == b'\x01':
-            sys.stderr.write(
-                "This is not in SNP major order - you did not handle this case\n")
+        if magicNumber != b'\x6c\x1b':
+            sys.stderr.write("Invalid PLINK BED magic number\n")
+            raise StopIteration
+        if order != b'\x01':
+            sys.stderr.write("BED file is not in SNP-major mode\n")
             raise StopIteration
 
         return self
