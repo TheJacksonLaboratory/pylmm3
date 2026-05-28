@@ -160,6 +160,8 @@ def main():
             "You must provide at least one PLINK input file base (--tfile or --bfile) or an EMMA formatted file (--emmaSNP).")
     if not options.kfile:
         parser.error("Please provide a pre-computed kinship file")
+    if options.kfile2:
+        parser.error("--kfile2 is not implemented.")
 
     # READING PLINK input
     if options.verbose:
@@ -235,50 +237,16 @@ def main():
     if np.isnan(X0).sum():
         parser.error("The covariate file %s contains missing values. At this time we are not dealing with this case.  Either remove those individuals with missing values or replace them in some way.")
 
-    # READING Kinship - major bottleneck for large datasets
+    # READING Kinship
     if options.verbose:
         sys.stderr.write("Reading kinship...\n")
     begin = time.time()
-    # This method seems to be the fastest and works if you already know the
-    # size of the matrix
-    if options.kfile[-3:] == '.gz':
-        import gzip
-        f = gzip.open(options.kfile, 'r')
-        F = f.read()  # might exhaust mem if the file is huge
-        K = np.fromstring(F, sep=' ')  # Assume that space separated
-        f.close()
-    else:
-        K = np.fromfile(open(options.kfile, 'r'), sep=" ")
-    K.resize((len(IN.indivs), len(IN.indivs)))
+    K = np.loadtxt(options.kfile)
     end = time.time()
-    # Other slower ways
-    # K = np.loadtxt(options.kfile)
-    # K = np.genfromtxt(options.kfile)
     if options.verbose:
         sys.stderr.write(
             "Read the %d x %d kinship matrix in %0.3fs \n" %
             (K.shape[0], K.shape[1], end - begin))
-
-    if options.kfile2:
-        if options.verbose:
-            sys.stderr.write("Reading second kinship...\n")
-        begin = time.time()
-        # This method seems to be the fastest and works if you already know the
-        # size of the matrix
-        if options.kfile2[-3:] == '.gz':
-            import gzip
-            f = gzip.open(options.kfile2, 'r')
-            F = f.read()  # might exhaust mem if the file is huge
-            K2 = np.fromstring(F, sep=' ')  # Assume that space separated
-            f.close()
-        else:
-            K2 = np.fromfile(open(options.kfile2, 'r'), sep=" ")
-        K2.resize((len(IN.indivs), len(IN.indivs)))
-        end = time.time()
-        if options.verbose:
-            sys.stderr.write(
-                "Read the %d x %d second kinship matrix in %0.3fs \n" %
-                (K2.shape[0], K2.shape[1], end - begin))
 
     # PROCESS the phenotype data -- Remove missing phenotype values
     # Keep will now index into the "full" data to select what we keep (either
@@ -294,8 +262,6 @@ def main():
         Y = Y[keep]
         X0 = X0[keep, :]
         K = K[keep, :][:, keep]
-        if options.kfile2:
-            K2 = K2[keep, :][:, keep]
         Kva = []
         Kve = []
 
@@ -313,10 +279,7 @@ def main():
     # CREATE LMM object for association
     n = K.shape[0]
     logging.debug(f"n: {n}")
-    if not options.kfile2:
-        L = LMM(Y, K, Kva, Kve, X0, verbose=options.verbose)
-    else:
-        L = LMM_withK2(Y, K, Kva, Kve, X0, verbose=options.verbose, K2=K2)
+    L = LMM(Y, K, Kva, Kve, X0, verbose=options.verbose)
 
     # Fit the null model -- if refit is true we will refit for each SNP, so no
     # reason to run here
@@ -324,14 +287,10 @@ def main():
         if options.verbose:
             sys.stderr.write("Computing fit for null model\n")
         L.fit()
-        if options.verbose and not options.kfile2:
+        if options.verbose:
             sys.stderr.write(
                 "\t heritability=%0.3f, sigma=%0.3f\n" %
                 (L.optH, L.optSigma))
-        if options.verbose and options.kfile2:
-            sys.stderr.write(
-                "\t heritability=%0.3f, sigma=%0.3f, w=%0.3f\n" %
-                (L.optH, L.optSigma, L.optW))
 
     # Buffers for pvalues and t-stats
     PS = []
@@ -367,12 +326,7 @@ def main():
             Ys = Y[keeps]
             X0s = X0[keeps, :]
             Ks = K[keeps, :][:, keeps]
-            if options.kfile2:
-                K2s = K2[keeps, :][:, keeps]
-            if options.kfile2:
-                Ls = LMM_withK2(Ys, Ks, X0=X0s, verbose=options.verbose, K2=K2s)
-            else:
-                Ls = LMM(Ys, Ks, X0=X0s, verbose=options.verbose)
+            Ls = LMM(Ys, Ks, X0=X0s, verbose=options.verbose)
             if options.refit:
                 Ls.fit(X=xs, REML=options.REML)
             else:
