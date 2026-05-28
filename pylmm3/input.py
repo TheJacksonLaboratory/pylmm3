@@ -15,15 +15,17 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import logging 
 import os
 import sys
-import numpy as np
-import struct
-import pdb
 
-import logging 
+import numpy as np
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# quick lookup table for decoding PLINK .bed genotypes
+_BED_LOOKUP = np.array([0.0, np.nan, 0.5, 1.0], dtype=np.float64)
+
 
 class plink:
     def __init__(
@@ -152,12 +154,10 @@ class plink:
         
         if self.type == 'b':
             X = self.fhandle.read(self.BytestoRead)
-            # XX = [bin(ord(x)) for x in struct.unpack(self._formatStr, X)]
-            XX = [bin(x)[2:].zfill(8) for x in X]  # Slicing to remove the '0b' prefix and padding
-            res = self.formatBinaryGenotypes(
-                XX, self.normGenotype), self.snpFileHandle.readline().strip().split()[1]
+            # use the new formatBinaryGenotypes function that uses numpy for decoding
+            res = self.formatBinaryGenotypes(X, self.normGenotype), self.snpFileHandle.readline().strip().split()[1]
             return res
-
+        
         elif self.type == 't':
             X = self.fhandle.readline()
             XX = X.strip().split()
@@ -202,34 +202,34 @@ class plink:
                 g = 0.5
             G.append(g)
         return np.array(G)
+    
 
-    def formatBinaryGenotypes(self, X, norm=True):
-        D = {
-            '00': 0.0,
-            '10': 0.5,
-            '11': 1.0,
-            '01': np.nan
-        }
+    def formatBinaryGenotypes(self, raw: bytes, norm: bool = True) -> np.ndarray:
+        """
+        Convert raw binary genotype data from a PLINK .bed file into a numpy array of genotypes.
 
-        G = []
-        for x in X:
-            if not len(x) == 10:
-                # logging.debug("(i) x: {}, type(x): {},  length: {}".format(x, type(x), len(x)))
-                xx = x[2:]
-                if x[0:2] == "0b":
-                    x = '0b' + '0' * (8 - len(xx)) + xx
-                elif len(x) == 8:
-                    x = "0b" + x
-            a, b, c, d = (x[8:], x[6:8], x[4:6], x[2:4])
-            # logging.debug("a: {}, b: {}, c: {}, d: {}". format(a, b, c, d))
-            L = [D[y] for y in [a, b, c, d]]
-            G += L
-        # only take the leading values because whatever is left should be null
-        G = G[:self.N]
-        G = np.array(G)
+        The BED format is specifically designed for bitwise decoding.
+
+        Parameters:
+        - raw: A bytes object containing the raw binary data for a single SNP.
+        - norm: A boolean indicating whether to normalize the genotypes (default is True). 
+                If True, the genotypes will be normalized to have mean 0 and variance 1.
+        Returns:
+        - A numpy array of genotypes for the SNP, where:
+          - 0.0 represents homozygous major allele (encoded as '11' in BED)
+          - 0.5 represents heterozygous (encoded as '10' in BED)    
+          - 1.0 represents homozygous minor allele (encoded as '00' in BED)
+          - np.nan represents missing data (encoded as '01' in BED)
+        """
+        arr = np.frombuffer(raw, dtype=np.uint8)
+        out = np.empty(len(arr) * 4, dtype=np.float64)
+        for shift in (0, 2, 4, 6):
+            out[shift // 2::4] = _BED_LOOKUP[(arr >> shift) & 0x3]
+        G = out[:self.N]
         if norm:
             G = self.normalizeGenotype(G)
         return G
+
 
     def normalizeGenotype(self, G):
         x = ~np.isnan(G)
