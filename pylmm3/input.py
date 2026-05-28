@@ -188,19 +188,40 @@ class plink:
             sys.stderr.write("Do not understand type %s\n" % (self.type))
 
     def getGenos_tped(self, X):
+        """
+        Decode one SNP row from a PLINK tped file into a dosage array.
+
+        X is the flat list of allele strings for a single SNP after the four
+        header fields (chr, rsid, cM, bp) have been stripped.  Each individual
+        contributes exactly two adjacent entries (diploid), so len(X) == 2*n.
+
+        PLINK numeric allele encoding:
+            '0' '0'  →  np.nan  (missing genotype)
+            '1' '1'  →  0.0     (homozygous reference)
+            '2' '2'  →  1.0     (homozygous alternate)
+            '1' '2'  →  0.5     (heterozygous, either phase)
+            '0' '1'
+            '0' '2'  →  0.5     (one allele known, one missing — treated as het)
+
+        The catch-all else branch returns np.nan for any equal-allele pair that
+        is not '0', '1', or '2' (e.g. nucleotide-encoded tped files using 'A',
+        'T', 'G', 'C').  Without it, such input raises UnboundLocalError.
+        """
+        print(X)
         G = []
-        for i in range(0, len(X) - 1, 2):
-            a = X[i]
-            b = X[i + 1]
+        for a, b in zip(X[::2], X[1::2]):
+            print(a, b)
             if a == b == '0':
-                g = np.nan
-            if a == b == '1':
-                g = 0
-            if a == b == '2':
-                g = 1
-            if a != b:
-                g = 0.5
-            G.append(g)
+                G.append(np.nan)
+            elif a == b == '1':
+                G.append(0.0)
+            elif a == b == '2':
+                G.append(1.0)
+            elif a != b:
+                G.append(0.5)
+            else:
+                print('oh no, unrecognized allele pair:', a, b)
+                G.append(np.nan)
         return np.array(G)
     
 
