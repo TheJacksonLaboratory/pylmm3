@@ -8,6 +8,9 @@ dependencies = [
     "scipy>=1.17.1",
 ]
 
+[tool.setuptools.packages.find]
+include = ["pylmm3*"]
+
 [project.scripts]
 pylmmGWAS = "pylmm3.scripts.pylmmGWAS:main"
 pylmmKinship = "pylmm3.scripts.pylmmKinship:main"

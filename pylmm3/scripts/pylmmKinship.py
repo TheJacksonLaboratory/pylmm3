@@ -1,48 +1,23 @@
 #!/usr/bin/python
 
-# pylmm is a python-based linear mixed-model solver with applications to GWAS
-# Copyright (C) 2015  Nicholas A. Furlotte (nick.furlotte@gmail.com)
-
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU Affero General Public License as published by
-#    the Free Software Foundation, either version 3 of the License, or
-#    (at your option) any later version.
-
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
-
-#    You should have received a copy of the GNU General Public License
-#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-import os
+import logging
 import sys
 import time
 
-from pylmm3 import input
-from pylmm3.lmm import calculateKinship
-
-from scipy.linalg import eigh
 import numpy as np
-
 from argparse import ArgumentParser
+from scipy.linalg import eigh
+
+from pylmm3 import input
+from pylmm3.kinship import calculateKinship
+
+logger = logging.getLogger(__name__)
 
 
 def _load_snp_matrix(plink_data, num_snps: int = None) -> np.ndarray:
     """
     Load raw (un-normalized) SNPs from a plink input object into an
     (n_samples, n_snps) float64 array, ready to pass to calculateKinship.
-
-    Arguments:
-        plink_data: a plink input object, already initialized with the 
-        appropriate file base and type.
-
-        num_snps: required for emma format, which cannot infer SNP count 
-        from the file header; ignored for bed/tped formats.
-
-    Returns:
-        raw (un-normalized) SNP matrix of shape (n_samples, n_snps)
     """
     plink_data.normGenotype = False
     plink_data.getSNPIterator()
@@ -58,7 +33,7 @@ def _load_snp_matrix(plink_data, num_snps: int = None) -> np.ndarray:
     return W[:, :j]
 
 
-def main(): 
+def main():
     parser = ArgumentParser(
         usage="%(prog)s [options] --[tfile | bfile] plinkFileBase outfile",
         description="Compute a kinship (realized relationship) matrix from PLINK genotype files."
@@ -87,20 +62,21 @@ def main():
 
     options = parser.parse_args()
     outFile = options.outfile
-    t_total = time.perf_counter()
 
+    if options.verbose:
+        logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(message)s")
+
+    t_total = time.perf_counter()
 
     if not options.tfile and not options.bfile and not options.emmaFile:
         parser.error(
             "You must provide at least one PLINK input file base (--tfile or --bfile) or an emma formatted file (--emmaSNP).")
 
-    if options.verbose:
-        sys.stderr.write("Reading PLINK input...\n")
+    logger.info("Reading PLINK input...")
     if options.bfile:
         plink_data = input.plink(options.bfile, type='b')
     elif options.tfile:
         plink_data = input.plink(options.tfile, type='t')
-    # elif options.pfile: plink_data = input.plink(options.pfile, type='p')
     elif options.emmaFile:
         if not options.numSNPs:
             parser.error(
@@ -111,46 +87,36 @@ def main():
             "You must provide at least one PLINK input file base (--tfile or --bfile) or an emma formatted file (--emmaSNP).")
 
     num_snps = options.numSNPs if options.emmaFile else None
-    if options.verbose:
-        sys.stderr.write("Loading SNPs...\n")
+    logger.info("Loading SNPs...")
     t0 = time.perf_counter()
     W = _load_snp_matrix(plink_data, num_snps=num_snps)
-    if options.verbose:
-        sys.stderr.write("Loaded %d SNPs x %d individuals in %.3fs\n" %
-                         (W.shape[1], W.shape[0], time.perf_counter() - t0))
+    logger.info("Loaded %d SNPs x %d individuals in %.3fs",
+                W.shape[1], W.shape[0], time.perf_counter() - t0)
 
-    if options.verbose:
-        sys.stderr.write("Computing kinship matrix...\n")
+    logger.info("Computing kinship matrix...")
     t0 = time.perf_counter()
     K = calculateKinship(W)
-    if options.verbose:
-        sys.stderr.write("Computed %dx%d kinship in %.3fs\n" %
-                         (K.shape[0], K.shape[1], time.perf_counter() - t0))
+    logger.info("Computed %dx%d kinship in %.3fs",
+                K.shape[0], K.shape[1], time.perf_counter() - t0)
 
-    if options.verbose:
-        sys.stderr.write("Saving kinship to %s\n" % outFile)
+    logger.info("Saving kinship to %s", outFile)
     t0 = time.perf_counter()
     np.savetxt(outFile, K)
-    if options.verbose:
-        sys.stderr.write("Saved in %.3fs\n" % (time.perf_counter() - t0))
+    logger.info("Saved in %.3fs", time.perf_counter() - t0)
 
     if options.saveEig:
-        if options.verbose:
-            sys.stderr.write("Computing eigendecomposition\n")
+        logger.info("Computing eigendecomposition...")
         t0 = time.perf_counter()
         Kva, Kve = eigh(K)
-        if options.verbose:
-            sys.stderr.write("Eigendecomposition in %.3fs\n" % (time.perf_counter() - t0))
+        logger.info("Eigendecomposition in %.3fs", time.perf_counter() - t0)
 
         t0 = time.perf_counter()
         np.savetxt(outFile + ".kva", Kva)
         np.savetxt(outFile + ".kve", Kve)
-        if options.verbose:
-            sys.stderr.write("Saved eigendecomposition to %s.[kva|kve] in %.3fs\n" %
-                             (outFile, time.perf_counter() - t0))
+        logger.info("Saved eigendecomposition to %s.[kva|kve] in %.3fs",
+                    outFile, time.perf_counter() - t0)
 
-    if options.verbose:
-        sys.stderr.write("Total: %.3fs\n" % (time.perf_counter() - t_total))
+    logger.info("Total: %.3fs", time.perf_counter() - t_total)
 
 
 if __name__ == "__main__":
