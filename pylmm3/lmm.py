@@ -93,7 +93,7 @@ def GWAS(Y, X, K, Kva=[], Kve=[], X0=None, REML=True, refit=False):
     # Remove missing values in Y and adjust associated parameters
     v = np.isnan(Y)
     if v.sum():
-        keep = True - v
+        keep = ~v
         keep = keep.reshape((-1,))
         Y = Y[keep]
         X = X[keep, :]
@@ -119,7 +119,7 @@ def GWAS(Y, X, K, Kva=[], Kve=[], X0=None, REML=True, refit=False):
         x = X[:, i].reshape((n, 1))
         v = np.isnan(x).reshape((-1,))
         if v.sum():
-            keep = True - v
+            keep = ~v
             xs = x[keep, :]
             if xs.var() == 0:
                 PS.append(np.nan)
@@ -187,7 +187,7 @@ class LMM:
             if self.verbose:
                 sys.stderr.write(
                     "Removing %d missing values from Y\n" %
-                    ((True - x).sum()))
+                    ((~x).sum()))
             Y = Y[x]
             K = K[x, :][:, x]
             X0 = X0[x, :]
