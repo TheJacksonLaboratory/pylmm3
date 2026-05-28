@@ -58,33 +58,46 @@ def matrixMult(A, B):
         trans_b=transB)
 
 
-def calculateKinship(W, center=False):
+def calculateKinship(W: np.ndarray, center: bool = False) -> np.ndarray:
     """
-       W is an n x m matrix encoding SNP minor alleles.
+    Compute the realized relationship matrix (RRM/GRM) from a raw genotype
+    matrix W of shape (n_samples, n_snps).
 
-       This function takes a matrix oF SNPs, imputes missing values with the maf,
-       normalizes the resulting vectors and returns the RRM matrix.
+    Each SNP column is imputed (missing → column mean), standardized to zero
+    mean and unit variance, and invariant SNPs are dropped. K is divided by
+    the number of valid SNPs used, not total SNPs.
+
+    Arguments:
+        W: raw (un-normalized) SNP matrix of shape (n_samples, n_snps)
+        center: apply EMMA-style trace normalization so that tr(K) = n - 1.
+
+    Returns:
+        realized relationship matrix of shape (n_samples, n_samples)
     """
     n = W.shape[0]
-    m = W.shape[1]
-    keep = []
-    for i in range(m):
-        mn = W[True - np.isnan(W[:, i]), i].mean()
-        W[np.isnan(W[:, i]), i] = mn
-        vr = W[:, i].var()
-        if vr == 0:
-            continue
+    W = W.astype(np.float64, copy=True)
 
-        keep.append(i)
-        W[:, i] = (W[:, i] - mn) / np.sqrt(vr)
+    # compute stats on observed values before imputation
+    col_means = np.nanmean(W, axis=0)
+    col_vars  = np.nanvar(W, axis=0)
 
-    W = W[:, keep]
-    K = matrixMult(W, W.T) * 1.0 / float(m)
+    # Impute missing with column mean
+    nan_rows, nan_cols = np.where(np.isnan(W))
+    W[nan_rows, nan_cols] = col_means[nan_cols]
+
+    # Drop invariant columns
+    keep = col_vars > 0
+    if not keep.any():
+        raise ValueError("No valid (non-invariant) SNPs found")
+
+    W = (W[:, keep] - col_means[keep]) / np.sqrt(col_vars[keep])
+    K = (W @ W.T) / W.shape[1]
+
     if center:
-        P = np.diag(np.repeat(1, n)) - 1 / float(n) * np.ones((n, n))
-        S = np.trace(matrixMult(matrixMult(P, K), P))
-        K_n = (n - 1) * K / S
-        return K_n
+        P = np.eye(n) - np.ones((n, n)) / n
+        S = np.trace(P @ K @ P)
+        return (n - 1) * K / S
+
     return K
 
 

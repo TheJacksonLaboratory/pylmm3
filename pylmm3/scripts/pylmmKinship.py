@@ -16,15 +16,45 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from pylmm3 import input
-from pylmm3.lmm import calculateKinship
-from scipy import linalg
-import numpy as np
 import os
 import sys
-import pdb
+
+from pylmm3 import input
+from pylmm3.lmm import calculateKinship
+
+from scipy.linalg import eigh
+import numpy as np
 
 from optparse import OptionParser, OptionGroup
+
+
+def _load_snp_matrix(plink_data, num_snps: int = None) -> np.ndarray:
+    """
+    Load raw (un-normalized) SNPs from a plink input object into an
+    (n_samples, n_snps) float64 array, ready to pass to calculateKinship.
+
+    Arguments:
+        plink_data: a plink input object, already initialized with the 
+        appropriate file base and type.
+
+        num_snps: required for emma format, which cannot infer SNP count 
+        from the file header; ignored for bed/tped formats.
+
+    Returns:
+        raw (un-normalized) SNP matrix of shape (n_samples, n_snps)
+    """
+    plink_data.normGenotype = False
+    plink_data.getSNPIterator()
+    if num_snps is not None:
+        plink_data.numSNPs = num_snps
+
+    n = len(plink_data.indivs)
+    W = np.empty((n, plink_data.numSNPs), dtype=np.float64)
+    j = 0
+    for snp, _ in plink_data:
+        W[:, j] = snp
+        j += 1
+    return W[:, :j]
 
 
 def main(): 
@@ -58,12 +88,6 @@ def main():
         "--efile",
         dest="saveEig",
         help="Save eigendecomposition to this file.")
-    basicGroup.add_option(
-        "-n",
-        default=1000,
-        dest="computeSize",
-        type="int",
-        help="The maximum number of SNPs to read into memory at once (default 1000).  This is important when there is a large number of SNPs, because memory could be an issue.")
 
     basicGroup.add_option("-v", "--verbose",
                         action="store_true", dest="verbose", default=False,
@@ -87,69 +111,26 @@ def main():
     if options.verbose:
         sys.stderr.write("Reading PLINK input...\n")
     if options.bfile:
-        IN = input.plink(options.bfile, type='b')
+        plink_data = input.plink(options.bfile, type='b')
     elif options.tfile:
-        IN = input.plink(options.tfile, type='t')
-    # elif options.pfile: IN = input.plink(options.pfile,type='p')
+        plink_data = input.plink(options.tfile, type='t')
+    # elif options.pfile: plink_data = input.plink(options.pfile, type='p')
     elif options.emmaFile:
         if not options.numSNPs:
             parser.error(
                 "You must provide the number of SNPs when specifying an emma formatted file.")
-        IN = input.plink(options.emmaFile, type='emma')
+        plink_data = input.plink(options.emmaFile, type='emma')
     else:
         parser.error(
             "You must provide at least one PLINK input file base (--tfile or --bfile) or an emma formatted file (--emmaSNP).")
 
-    n = len(IN.indivs)
-    m = options.computeSize
-    W = np.ones((n, m)) * np.nan
-
-    IN.getSNPIterator()
-    # Annoying hack to get around the fact that it is expensive to determine
-    # the number of SNPs in an emma file
-    if options.emmaFile:
-        IN.numSNPs = options.numSNPs
-    i = 0
-    K = None
-    while i < IN.numSNPs:
-        j = 0
-        while j < options.computeSize and i < IN.numSNPs:
-            snp, id = next(IN)  # Changed from IN.next() to next(IN)
-            if snp.var() == 0:
-                i += 1
-                continue
-            W[:, j] = snp
-
-            i += 1
-            j += 1
-        if j < options.computeSize:
-            W = W[:, range(0, j)]
-
-        if options.verbose:
-            sys.stderr.write("Processing first %d SNPs\n" % i)
-        if K is None:
-            try:
-                K = linalg.fblas.dgemm(
-                    alpha=1.,
-                    a=W.T,
-                    b=W.T,
-                    trans_a=True,
-                    trans_b=False)  # calculateKinship(W) * j
-            except AttributeError:
-                K = np.dot(W, W.T)
-        else:
-            try:
-                K_j = linalg.fblas.dgemm(
-                    alpha=1.,
-                    a=W.T,
-                    b=W.T,
-                    trans_a=True,
-                    trans_b=False)  # calculateKinship(W) * j
-            except AttributeError:
-                K_j = np.dot(W, W.T)
-            K = K + K_j
-
-    K = K / float(IN.numSNPs)
+    num_snps = options.numSNPs if options.emmaFile else None
+    if options.verbose:
+        sys.stderr.write("Loading SNPs...\n")
+    W = _load_snp_matrix(plink_data, num_snps=num_snps)
+    if options.verbose:
+        sys.stderr.write("Computing kinship matrix...\n")
+    K = calculateKinship(W)
     if options.verbose:
         sys.stderr.write("Saving Kinship file to %s\n" % outFile)
     np.savetxt(outFile, K)
@@ -157,7 +138,7 @@ def main():
     if options.saveEig:
         if options.verbose:
             sys.stderr.write("Obtaining Eigendecomposition\n")
-        Kva, Kve = linalg.eigh(K)
+        Kva, Kve = eigh(K)
         if options.verbose:
             sys.stderr.write(
                 "Saving eigendecomposition to %s.[kva | kve]\n" %
