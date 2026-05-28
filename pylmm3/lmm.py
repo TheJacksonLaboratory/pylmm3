@@ -256,7 +256,7 @@ class LMM:
         # sf == survival function - this is more accurate -- could also use
         # logsf if the precision is not good enough
         if log:
-            ps = 2.0 + (stats.t.logsf(np.abs(ts), self.N - q))
+            ps = np.log(2.0) + stats.t.logsf(np.abs(ts), self.N - q)
         else:
             ps = 2.0 * (stats.t.sf(np.abs(ts), self.N - q))
         if not len(ts) == 1 or not len(ps) == 1:
