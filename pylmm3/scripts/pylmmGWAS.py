@@ -22,7 +22,6 @@ from pylmm3.lmm import LMM
 from scipy import linalg
 import numpy as np
 import os
-import pdb
 import time
 import sys
 

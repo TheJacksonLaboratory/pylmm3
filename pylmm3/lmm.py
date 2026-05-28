@@ -22,40 +22,6 @@ from scipy import linalg
 from scipy import optimize
 from scipy import stats
 
-# np.seterr('raise')
-
-
-def matrixMult(A, B):
-
-    # If there is no fblas then we will revert to np.dot()
-    try:
-        linalg.fblas
-    except AttributeError:
-        return np.dot(A, B)
-
-    # If the matrices are in Fortran order then the computations will be faster
-    # when using dgemm.  Otherwise, the function will copy the matrix and that
-    # takes time.
-    if not A.flags['F_CONTIGUOUS']:
-        AA = A.T
-        transA = True
-    else:
-        AA = A
-        transA = False
-
-    if not B.flags['F_CONTIGUOUS']:
-        BB = B.T
-        transB = True
-    else:
-        BB = B
-        transB = False
-
-    return linalg.fblas.dgemm(
-        alpha=1.,
-        a=AA,
-        b=BB,
-        trans_a=transA,
-        trans_b=transB)
 
 
 def calculateKinship(W: np.ndarray, center: bool = False) -> np.ndarray:
@@ -262,8 +228,8 @@ class LMM:
            eigenvector matrix of K (the kinship).
         """
 
-        self.Yt = matrixMult(self.Kve.T, self.Y)
-        self.X0t = matrixMult(self.Kve.T, self.X0)
+        self.Yt = self.Kve.T @ self.Y
+        self.X0t = self.Kve.T @ self.X0
         self.X0t_stack = np.hstack([self.X0t, np.ones((self.N, 1))])
         self.q = self.X0t.shape[1]
 
@@ -278,10 +244,10 @@ class LMM:
 
         S = 1.0 / (h * self.Kva + (1.0 - h))
         Xt = X.T * S
-        XX = matrixMult(Xt, X)
+        XX = Xt @ X
         XX_i = linalg.inv(XX)
-        beta = matrixMult(matrixMult(XX_i, Xt), self.Yt)
-        Yt = self.Yt - matrixMult(X, beta)
+        beta = XX_i @ Xt @ self.Yt
+        Yt = self.Yt - X @ beta
         Q = np.dot(Yt.T * S, Yt)
         sigma = Q * 1.0 / (float(self.N) - float(X.shape[1]))
         return beta, sigma, Q, XX_i, XX
@@ -305,7 +271,7 @@ class LMM:
         if X is None:
             X = self.X0t
         elif stack:
-            self.X0t_stack[:, (self.q)] = matrixMult(self.Kve.T, X)[:, 0]
+            self.X0t_stack[:, self.q] = (self.Kve.T @ X)[:, 0]
             X = self.X0t_stack
 
         n = float(self.N)
@@ -317,7 +283,7 @@ class LMM:
 
         if REML:
             LL_REML_part = q * np.log(2.0 * np.pi * sigma) + np.log(
-                linalg.det(matrixMult(X.T, X))) - np.log(linalg.det(XX))
+                linalg.det(X.T @ X)) - np.log(linalg.det(XX))
             LL = LL + 0.5 * LL_REML_part
 
         LL = LL.sum()
@@ -367,8 +333,7 @@ class LMM:
         if X is None:
             X = self.X0t
         else:
-            # X = np.hstack([self.X0t,matrixMult(self.Kve.T, X)])
-            self.X0t_stack[:, (self.q)] = matrixMult(self.Kve.T, X)[:, 0]
+            self.X0t_stack[:, self.q] = (self.Kve.T @ X)[:, 0]
             X = self.X0t_stack
 
         H = np.array(range(ngrids)) / float(ngrids)
@@ -393,8 +358,7 @@ class LMM:
 
         """
         if stack:
-            # X = np.hstack([self.X0t,matrixMult(self.Kve.T, X)])
-            self.X0t_stack[:, (self.q)] = matrixMult(self.Kve.T, X)[:, 0]
+            self.X0t_stack[:, self.q] = (self.Kve.T @ X)[:, 0]
             X = self.X0t_stack
 
         if h is None:
