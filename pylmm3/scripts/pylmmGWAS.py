@@ -27,7 +27,7 @@ import sys
 
 import logging
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def printOutHead(out):
     out.write("\t".join(["SNP_ID", "BETA", "BETA_SD", "F_STAT", "P_VALUE"]) + "\n")
@@ -276,7 +276,7 @@ def main():
 
     # CREATE LMM object for association (includes eigendecomposition if not pre-loaded)
     n = K.shape[0]
-    logging.debug(f"n: {n}")
+    logger.debug(f"n: {n}")
     t0 = time.perf_counter()
     L = LMM(Y, K, Kva, Kve, X0, verbose=options.verbose)
     if options.verbose:
@@ -297,62 +297,61 @@ def main():
     PS = []
     TS = []
     count = 0
-    out = open(outFile, 'w')
-    printOutHead(out)
 
     t_scan = time.perf_counter()
-    for snp, id in IN:
-        count += 1
+    with open(outFile, 'w') as out:
+        printOutHead(out)
 
-        if options.verbose and count % 1000 == 0:
-            elapsed = time.perf_counter() - t_scan
-            sys.stderr.write("At SNP %d  (%.0f SNPs/s)\n" % (count, count / elapsed))
+        for snp, id in IN:
+            count += 1
 
-        x = snp[keep].reshape((n, 1))
-        v = np.isnan(x).reshape((-1,))
+            if options.verbose and count % 1000 == 0:
+                elapsed = time.perf_counter() - t_scan
+                sys.stderr.write("At SNP %d  (%.0f SNPs/s)\n" % (count, count / elapsed))
 
-        # Check SNPs for missing values
-        if v.sum():
-            keeps = ~v
-            xs = x[keeps, :]
-            if keeps.sum() <= 1 or xs.var() <= 1e-6:
-                PS.append(np.nan)
-                TS.append(np.nan)
-                outputResult(out, id, np.nan, np.nan, np.nan, np.nan)
-                continue
+            x = snp[keep].reshape((n, 1))
+            v = np.isnan(x).reshape((-1,))
 
-            # Its ok to center the genotype -  I used options.normalizeGenotype to
-            # force the removal of missing genotypes as opposed to replacing them
-            # with MAF.
-            if not options.normalizeGenotype:
-                xs = (xs - xs.mean()) / np.sqrt(xs.var())
-            Ys = Y[keeps]
-            X0s = X0[keeps, :]
-            Ks = K[keeps, :][:, keeps]
-            Ls = LMM(Ys, Ks, X0=X0s, verbose=options.verbose)
-            if options.refit:
-                Ls.fit(X=xs, REML=options.REML)
+            # Check SNPs for missing values
+            if v.sum():
+                keeps = ~v
+                xs = x[keeps, :]
+                if keeps.sum() <= 1 or xs.var() <= 1e-6:
+                    PS.append(np.nan)
+                    TS.append(np.nan)
+                    outputResult(out, id, np.nan, np.nan, np.nan, np.nan)
+                    continue
+
+                # Its ok to center the genotype -  I used options.normalizeGenotype to
+                # force the removal of missing genotypes as opposed to replacing them
+                # with MAF.
+                if not options.normalizeGenotype:
+                    xs = (xs - xs.mean()) / np.sqrt(xs.var())
+                Ys = Y[keeps]
+                X0s = X0[keeps, :]
+                Ks = K[keeps, :][:, keeps]
+                Ls = LMM(Ys, Ks, X0=X0s, verbose=options.verbose)
+                if options.refit:
+                    Ls.fit(X=xs, REML=options.REML)
+                else:
+                    Ls.fit(REML=options.REML)
+                ts, ps, beta, betaVar = Ls.association(
+                    xs, REML=options.REML, returnBeta=True)
             else:
-                # try:
-                Ls.fit(REML=options.REML)
-                # except: pdb.set_trace()
-            ts, ps, beta, betaVar = Ls.association(
-                xs, REML=options.REML, returnBeta=True)
-        else:
-            if x.var() == 0:
-                PS.append(np.nan)
-                TS.append(np.nan)
-                outputResult(out, id, np.nan, np.nan, np.nan, np.nan)
-                continue
+                if x.var() == 0:
+                    PS.append(np.nan)
+                    TS.append(np.nan)
+                    outputResult(out, id, np.nan, np.nan, np.nan, np.nan)
+                    continue
 
-            if options.refit:
-                L.fit(X=x, REML=options.REML)
-            ts, ps, beta, betaVar = L.association(
-                x, REML=options.REML, returnBeta=True)
+                if options.refit:
+                    L.fit(X=x, REML=options.REML)
+                ts, ps, beta, betaVar = L.association(
+                    x, REML=options.REML, returnBeta=True)
 
-        outputResult(out, id, beta, np.sqrt(betaVar).sum(), ts, ps)
-        PS.append(ps)
-        TS.append(ts)
+            outputResult(out, id, beta, np.sqrt(betaVar).sum(), ts, ps)
+            PS.append(ps)
+            TS.append(ts)
 
     if options.verbose:
         elapsed = time.perf_counter() - t_scan

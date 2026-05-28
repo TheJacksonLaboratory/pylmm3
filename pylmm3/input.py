@@ -15,13 +15,13 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import logging 
+import logging
 import os
 import sys
 
 import numpy as np
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # quick lookup table for decoding PLINK .bed genotypes
 _BED_LOOKUP = np.array([0.0, np.nan, 0.5, 1.0], dtype=np.float64)
@@ -130,7 +130,7 @@ class plink:
         self.snpFileHandle = open(file, 'r')
 
         self.BytestoRead = self.N // 4 + (self.N % 4 and 1 or 0)
-        logging.debug(f"[PLINK] Bytes to read: {self.BytestoRead}")
+        logger.debug(f"[PLINK] Bytes to read: {self.BytestoRead}")
         self._formatStr = 'c' * self.BytestoRead
 
         file = self.fbase + '.bed'
@@ -207,10 +207,8 @@ class plink:
         is not '0', '1', or '2' (e.g. nucleotide-encoded tped files using 'A',
         'T', 'G', 'C').  Without it, such input raises UnboundLocalError.
         """
-        print(X)
         G = []
         for a, b in zip(X[::2], X[1::2]):
-            print(a, b)
             if a == b == '0':
                 G.append(np.nan)
             elif a == b == '1':
@@ -220,7 +218,7 @@ class plink:
             elif a != b:
                 G.append(0.5)
             else:
-                print('oh no, unrecognized allele pair:', a, b)
+                logger.warning("Unrecognized allele pair: %r %r", a, b)
                 G.append(np.nan)
         return np.array(G)
     
