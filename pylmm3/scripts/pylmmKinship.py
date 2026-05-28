@@ -18,6 +18,7 @@
 
 import os
 import sys
+import time
 
 from pylmm3 import input
 from pylmm3.lmm import calculateKinship
@@ -102,6 +103,7 @@ def main():
         sys.exit()
 
     outFile = args[0]
+    t_total = time.perf_counter()
 
 
     if not options.tfile and not options.bfile and not options.emmaFile:
@@ -127,24 +129,44 @@ def main():
     num_snps = options.numSNPs if options.emmaFile else None
     if options.verbose:
         sys.stderr.write("Loading SNPs...\n")
+    t0 = time.perf_counter()
     W = _load_snp_matrix(plink_data, num_snps=num_snps)
     if options.verbose:
+        sys.stderr.write("Loaded %d SNPs x %d individuals in %.3fs\n" %
+                         (W.shape[1], W.shape[0], time.perf_counter() - t0))
+
+    if options.verbose:
         sys.stderr.write("Computing kinship matrix...\n")
+    t0 = time.perf_counter()
     K = calculateKinship(W)
     if options.verbose:
-        sys.stderr.write("Saving Kinship file to %s\n" % outFile)
+        sys.stderr.write("Computed %dx%d kinship in %.3fs\n" %
+                         (K.shape[0], K.shape[1], time.perf_counter() - t0))
+
+    if options.verbose:
+        sys.stderr.write("Saving kinship to %s\n" % outFile)
+    t0 = time.perf_counter()
     np.savetxt(outFile, K)
+    if options.verbose:
+        sys.stderr.write("Saved in %.3fs\n" % (time.perf_counter() - t0))
 
     if options.saveEig:
         if options.verbose:
-            sys.stderr.write("Obtaining Eigendecomposition\n")
+            sys.stderr.write("Computing eigendecomposition\n")
+        t0 = time.perf_counter()
         Kva, Kve = eigh(K)
         if options.verbose:
-            sys.stderr.write(
-                "Saving eigendecomposition to %s.[kva | kve]\n" %
-                outFile)
+            sys.stderr.write("Eigendecomposition in %.3fs\n" % (time.perf_counter() - t0))
+
+        t0 = time.perf_counter()
         np.savetxt(outFile + ".kva", Kva)
         np.savetxt(outFile + ".kve", Kve)
+        if options.verbose:
+            sys.stderr.write("Saved eigendecomposition to %s.[kva|kve] in %.3fs\n" %
+                             (outFile, time.perf_counter() - t0))
+
+    if options.verbose:
+        sys.stderr.write("Total: %.3fs\n" % (time.perf_counter() - t_total))
 
 
 if __name__ == "__main__":

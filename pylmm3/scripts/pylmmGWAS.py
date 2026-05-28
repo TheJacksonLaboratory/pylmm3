@@ -153,6 +153,7 @@ def main():
         sys.exit()
 
     outFile = args[0]
+    t_total = time.perf_counter()
 
     if not options.tfile and not options.bfile and not options.emmaFile:
         # if not options.pfile and not options.tfile and not options.bfile:
@@ -240,13 +241,11 @@ def main():
     # READING Kinship
     if options.verbose:
         sys.stderr.write("Reading kinship...\n")
-    begin = time.time()
+    t0 = time.perf_counter()
     K = np.loadtxt(options.kfile)
-    end = time.time()
     if options.verbose:
-        sys.stderr.write(
-            "Read the %d x %d kinship matrix in %0.3fs \n" %
-            (K.shape[0], K.shape[1], end - begin))
+        sys.stderr.write("Read %dx%d kinship in %.3fs\n" %
+                         (K.shape[0], K.shape[1], time.perf_counter() - t0))
 
     # PROCESS the phenotype data -- Remove missing phenotype values
     # Keep will now index into the "full" data to select what we keep (either
@@ -276,21 +275,24 @@ def main():
         Kva = []
         Kve = []
 
-    # CREATE LMM object for association
+    # CREATE LMM object for association (includes eigendecomposition if not pre-loaded)
     n = K.shape[0]
     logging.debug(f"n: {n}")
+    t0 = time.perf_counter()
     L = LMM(Y, K, Kva, Kve, X0, verbose=options.verbose)
+    if options.verbose:
+        sys.stderr.write("LMM setup (eigendecomposition) in %.3fs\n" % (time.perf_counter() - t0))
 
     # Fit the null model -- if refit is true we will refit for each SNP, so no
     # reason to run here
     if not options.refit:
         if options.verbose:
-            sys.stderr.write("Computing fit for null model\n")
+            sys.stderr.write("Fitting null model\n")
+        t0 = time.perf_counter()
         L.fit()
         if options.verbose:
-            sys.stderr.write(
-                "\t heritability=%0.3f, sigma=%0.3f\n" %
-                (L.optH, L.optSigma))
+            sys.stderr.write("Null fit: heritability=%.3f, sigma=%.3f (%.3fs)\n" %
+                             (L.optH, L.optSigma, time.perf_counter() - t0))
 
     # Buffers for pvalues and t-stats
     PS = []
@@ -299,11 +301,13 @@ def main():
     out = open(outFile, 'w')
     printOutHead(out)
 
+    t_scan = time.perf_counter()
     for snp, id in IN:
         count += 1
 
         if options.verbose and count % 1000 == 0:
-            sys.stderr.write("At SNP %d\n" % count)
+            elapsed = time.perf_counter() - t_scan
+            sys.stderr.write("At SNP %d  (%.0f SNPs/s)\n" % (count, count / elapsed))
 
         x = snp[keep].reshape((n, 1))
         v = np.isnan(x).reshape((-1,))
@@ -350,6 +354,12 @@ def main():
         outputResult(out, id, beta, np.sqrt(betaVar).sum(), ts, ps)
         PS.append(ps)
         TS.append(ts)
+
+    if options.verbose:
+        elapsed = time.perf_counter() - t_scan
+        sys.stderr.write("Scanned %d SNPs in %.3fs (%.0f SNPs/s)\n" %
+                         (count, elapsed, count / elapsed))
+        sys.stderr.write("Total: %.3fs\n" % (time.perf_counter() - t_total))
 
 
 if __name__ == "__main__":
