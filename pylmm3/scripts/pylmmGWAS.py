@@ -16,7 +16,7 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from optparse import OptionParser, OptionGroup
+from argparse import ArgumentParser
 from pylmm3 import input
 from pylmm3.lmm import LMM
 from scipy import linalg
@@ -38,120 +38,74 @@ def outputResult(out, id, beta, betaSD, ts, ps):
 
 
 def main():
-    usage = """usage: %prog [options] --kfile kinshipFile --[tfile | bfile] plinkFileBase outfileBase
+    parser = ArgumentParser(
+        usage="%(prog)s [options] --kfile kinshipFile --[tfile | bfile] plinkFileBase outfile",
+        description=(
+            "Basic genome-wide association (GWAS) using a linear mixed model. "
+            "Provide a phenotype and genotype file plus a pre-computed kinship matrix "
+            "(see pylmmKinship). Outputs a tab-separated result file with per-SNP statistics. "
+            "Input files are standard PLINK format; phenotype file accepts NA or -9 for missing values."
+        )
+    )
 
-    This program provides basic genome-wide association (GWAS) functionality.  You provide a phenotype and genotype file as well as a pre-computed (use pylmmKinship.py) kinship matrix and the program outputs a result file with information about each SNP, including the association p-value.
-    The input file are all standard plink formatted with the first two columns specifiying the individual and family ID.  For the phenotype file, we accept either NA or -9 to denote missing values.
+    basicGroup = parser.add_argument_group("Basic Options")
+    advancedGroup = parser.add_argument_group("Advanced Options")
+    experimentalGroup = parser.add_argument_group("Experimental Options")
 
-    Basic usage:
+    basicGroup.add_argument("--tfile", dest="tfile",
+                            help="The base for a PLINK tped file")
+    basicGroup.add_argument("--bfile", dest="bfile",
+                            help="The base for a PLINK binary bed file")
+    basicGroup.add_argument(
+        "--phenofile", dest="phenoFile", default=None,
+        help="Phenotype file in plink format. Defaults to <plinkFileBase>.phenos.")
+    basicGroup.add_argument(
+        "--emmaSNP", dest="emmaFile", default=None,
+        help="EMMA-format genotype file (individuals on columns, SNPs on rows).")
+    basicGroup.add_argument(
+        "--emmaPHENO", dest="emmaPheno", default=None,
+        help="EMMA-format phenotype file (one phenotype per row).")
+    basicGroup.add_argument(
+        "--emmaCOV", dest="emmaCov", default=None,
+        help="EMMA-format covariate file (one covariate per row).")
+    basicGroup.add_argument(
+        "--kfile", dest="kfile",
+        help="Pre-computed kinship matrix (nxn plain text, from pylmmKinship).")
+    basicGroup.add_argument(
+        "--covfile", dest="covfile",
+        help="Covariate file in plink format.")
+    basicGroup.add_argument(
+        "-p", type=int, dest="pheno", default=0,
+        help="0-indexed phenotype column to test (counting from column 3 of phenofile).")
 
-        python pylmmGWAS.py -v --bfile plinkFile --kfile preComputedKinship.kin --phenofile plinkFormattedPhenotypeFile resultFile
+    advancedGroup.add_argument(
+        "--removeMissingGenotypes", action="store_false", dest="normalizeGenotype", default=True,
+        help="Drop individuals with missing genotypes instead of imputing with MAF. "
+             "Triggers eigendecomposition recompute per SNP with missing values.")
+    advancedGroup.add_argument(
+        "--refit", action="store_true", dest="refit", default=False,
+        help="Re-estimate variance components at each SNP (slower; more accurate for large-effect SNPs).")
+    advancedGroup.add_argument(
+        "--REML", action="store_true", dest="REML", default=False,
+        help="Use restricted maximum-likelihood (default is maximum-likelihood).")
+    advancedGroup.add_argument(
+        "--eigen", dest="eigenfile",
+        help="Base path for pre-computed eigendecomposition (<base>.Kva and <base>.Kve).")
+    advancedGroup.add_argument(
+        "--noMean", dest="noMean", default=False, action="store_true",
+        help="Suppress automatic global mean covariate when --covfile is provided.")
+    advancedGroup.add_argument(
+        "-v", "--verbose", action="store_true", dest="verbose", default=False,
+        help="Print extra info to stderr.")
 
-            """
-    parser = OptionParser(usage=usage)
+    experimentalGroup.add_argument(
+        "--kfile2", dest="kfile2",
+        help="Second kinship matrix for confounding correction (not implemented).")
 
-    basicGroup = OptionGroup(parser, "Basic Options")
-    advancedGroup = OptionGroup(parser, "Advanced Options")
-    experimentalGroup = OptionGroup(parser, "Experimental Options")
+    parser.add_argument("outfile", help="Output path for GWAS results.")
 
-    # basicGroup.add_option("--pfile", dest="pfile",
-    #                  help="The base for a PLINK ped file")
-    basicGroup.add_option("--tfile", dest="tfile",
-                        help="The base for a PLINK tped file")
-    basicGroup.add_option("--bfile", dest="bfile",
-                        help="The base for a PLINK binary bed file")
-    basicGroup.add_option(
-        "--phenofile",
-        dest="phenoFile",
-        default=None,
-        help="Without this argument the program will look for a file with .pheno that has the plinkFileBase root.  If you want to specify an alternative phenotype file, then use this argument.  This file should be in plink format. ")
-
-    # EMMA Options
-    basicGroup.add_option(
-        "--emmaSNP",
-        dest="emmaFile",
-        default=None,
-        help="For backwards compatibility with emma, we allow for \"EMMA\" file formats.  This is just a text file with individuals on the columns and snps on the rows.")
-    basicGroup.add_option(
-        "--emmaPHENO",
-        dest="emmaPheno",
-        default=None,
-        help="For backwards compatibility with emma, we allow for \"EMMA\" file formats.  This is just a text file with each phenotype as one row.")
-    basicGroup.add_option(
-        "--emmaCOV",
-        dest="emmaCov",
-        default=None,
-        help="For backwards compatibility with emma, we allow for \"EMMA\" file formats.  This is just a text file with each covariate as one row.")
-
-    basicGroup.add_option(
-        "--kfile",
-        dest="kfile",
-        help="The location of a kinship file.  This is an nxn plain text file and can be computed with the pylmmKinship program.")
-    basicGroup.add_option(
-        "--covfile",
-        dest="covfile",
-        help="The location of a covariate file file.  This is a plink formatted covariate file.")
-    basicGroup.add_option(
-        "-p",
-        type="int",
-        dest="pheno",
-        help="The phenotype index to be used in association.",
-        default=0)
-
-
-    advancedGroup.add_option(
-        "--removeMissingGenotypes",
-        action="store_false",
-        dest="normalizeGenotype",
-        default=True,
-        help="By default the program replaces missing genotypes with the minor allele frequency.  This option overrides that behavior making the program remove missing individuals.  NOTE: This can increase running time due to the need to recompute the eigendecomposition for each SNP with missing values.")
-    advancedGroup.add_option(
-        "--refit",
-        action="store_true",
-        dest="refit",
-        default=False,
-        help="Refit the variance components at each SNP (default is to lock in the variance components under the null).")
-
-    advancedGroup.add_option(
-        "--REML",
-        action="store_true",
-        dest="REML",
-        default=False,
-        help="Use restricted maximum-likelihood (REML) (default is maximum-likelihood).")
-    # advancedGroup.add_option("-e", "--efile", dest="saveEig", help="Save eigendecomposition to this file.")
-    advancedGroup.add_option(
-        "--eigen",
-        dest="eigenfile",
-        help="The location of the precomputed eigendecomposition for the kinship file.  These can be computed with pylmmKinship.py.")
-    advancedGroup.add_option(
-        "--noMean",
-        dest="noMean",
-        default=False,
-        action="store_true",
-        help="This option only applies when --cofile is used.  When covfile is provided, the program will automatically add a global mean covariate to the model unless this option is specified.")
-
-    advancedGroup.add_option("-v", "--verbose",
-                            action="store_true", dest="verbose", default=False,
-                            help="Print extra info")
-
-    # Experimental Group Options
-    experimentalGroup.add_option(
-        "--kfile2",
-        dest="kfile2",
-        help="The location of a second kinship file.  This file has the same format as the first kinship.  This might be used if you want to correct for another form of confounding.")
-
-    parser.add_option_group(basicGroup)
-    parser.add_option_group(advancedGroup)
-    parser.add_option_group(experimentalGroup)
-
-    (options, args) = parser.parse_args()
-
-
-    if len(args) != 1:
-        parser.print_help()
-        sys.exit()
-
-    outFile = args[0]
+    options = parser.parse_args()
+    outFile = options.outfile
     t_total = time.perf_counter()
 
     if not options.tfile and not options.bfile and not options.emmaFile:

@@ -26,7 +26,7 @@ from pylmm3.lmm import calculateKinship
 from scipy.linalg import eigh
 import numpy as np
 
-from optparse import OptionParser, OptionGroup
+from argparse import ArgumentParser
 
 
 def _load_snp_matrix(plink_data, num_snps: int = None) -> np.ndarray:
@@ -59,50 +59,34 @@ def _load_snp_matrix(plink_data, num_snps: int = None) -> np.ndarray:
 
 
 def main(): 
-    usage = """usage: %prog [options] --[tfile | bfile] plinkFileBase outfile"""
+    parser = ArgumentParser(
+        usage="%(prog)s [options] --[tfile | bfile] plinkFileBase outfile",
+        description="Compute a kinship (realized relationship) matrix from PLINK genotype files."
+    )
 
-    parser = OptionParser(usage=usage)
+    basicGroup = parser.add_argument_group("Basic Options")
 
-    basicGroup = OptionGroup(parser, "Basic Options")
-    # advancedGroup = OptionGroup(parser, "Advanced Options")
+    basicGroup.add_argument("--tfile", dest="tfile",
+                            help="The base for a PLINK tped file")
+    basicGroup.add_argument("--bfile", dest="bfile",
+                            help="The base for a PLINK binary ped file")
+    basicGroup.add_argument(
+        "--emmaSNP", dest="emmaFile", default=None,
+        help="EMMA-format genotype file (individuals on rows, SNPs on columns).")
+    basicGroup.add_argument(
+        "--emmaNumSNPs", dest="numSNPs", type=int, default=0,
+        help="Number of SNPs in the EMMA file (required with --emmaSNP).")
+    basicGroup.add_argument(
+        "-e", "--efile", dest="saveEig",
+        help="Save eigendecomposition to <file>.kva and <file>.kve.")
+    basicGroup.add_argument(
+        "-v", "--verbose", action="store_true", dest="verbose", default=False,
+        help="Print extra info to stderr.")
 
-    # basicGroup.add_option("--pfile", dest="pfile",
-    #                  help="The base for a PLINK ped file")
-    basicGroup.add_option("--tfile", dest="tfile",
-                        help="The base for a PLINK tped file")
-    basicGroup.add_option("--bfile", dest="bfile",
-                        help="The base for a PLINK binary ped file")
-    basicGroup.add_option(
-        "--emmaSNP",
-        dest="emmaFile",
-        default=None,
-        help="For backwards compatibility with emma, we allow for \"EMMA\" file formats.  This is just a text file with individuals on the rows and snps on the columns.")
-    basicGroup.add_option(
-        "--emmaNumSNPs",
-        dest="numSNPs",
-        type="int",
-        default=0,
-        help="When providing the emmaSNP file you need to specify how many snps are in the file")
+    parser.add_argument("outfile", help="Output path for the kinship matrix.")
 
-    basicGroup.add_option(
-        "-e",
-        "--efile",
-        dest="saveEig",
-        help="Save eigendecomposition to this file.")
-
-    basicGroup.add_option("-v", "--verbose",
-                        action="store_true", dest="verbose", default=False,
-                        help="Print extra info")
-
-    parser.add_option_group(basicGroup)
-    # parser.add_option_group(advancedGroup)
-
-    (options, args) = parser.parse_args()
-    if len(args) != 1:
-        parser.print_help()
-        sys.exit()
-
-    outFile = args[0]
+    options = parser.parse_args()
+    outFile = options.outfile
     t_total = time.perf_counter()
 
 

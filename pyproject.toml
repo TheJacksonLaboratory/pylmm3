@@ -7,3 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "scipy>=1.17.1",
 ]
+
+[project.scripts]
+pylmmGWAS = "pylmm3.scripts.pylmmGWAS:main"
+pylmmKinship = "pylmm3.scripts.pylmmKinship:main"
