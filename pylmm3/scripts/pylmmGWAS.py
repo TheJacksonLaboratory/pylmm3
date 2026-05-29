@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from argparse import ArgumentParser
 import gzip
 import logging
 import os
@@ -7,11 +8,10 @@ import sys
 import time
 
 import numpy as np
-from argparse import ArgumentParser
 
 from pylmm3 import input
 from pylmm3.gwas_fast import runGWAS as runGWAS_fast
-from pylmm3.gwas import runGWAS as runGWAS_norm
+from pylmm3.gwas import runGWAS as runGWAS_original
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +87,8 @@ def main():
         "--kfile2", dest="kfile2",
         help="Second kinship matrix for confounding correction (not implemented).")
     experimentalGroup.add_argument(
-        "--fast", action="store_true", dest="FAST", default=False,
-        help="Use the fast GWAS implementation (default is standard implementation).")
+        "--orig", action="store_true", dest="ORIG", default=False,
+        help="Use the original GWAS implementation (default is fast implementation).")
 
     parser.add_argument("outfile", help="Output path for GWAS results.")
 
@@ -168,12 +168,10 @@ def main():
     # Read kinship
     logger.info("Reading kinship...")
     t0 = time.perf_counter()
-    if options.kfile.endswith('.gz'):
-        with gzip.open(options.kfile, 'rt') as f:
-            K = np.fromstring(f.read(), sep=' ')
-    else:
-        K = np.fromfile(open(options.kfile, 'r'), sep=' ')
-    K.resize((len(plink_data.indivs), len(plink_data.indivs)))
+    open_func = gzip.open if options.kfile.endswith('.gz') else open
+    with open_func(options.kfile, 'rt') as f:
+        K = np.fromstring(f.read(), sep=' ')
+    K = K.reshape((len(plink_data.indivs), len(plink_data.indivs)))
     logger.info("Read %dx%d kinship in %.3fs", K.shape[0], K.shape[1], time.perf_counter() - t0)
 
     # Load pre-computed eigendecomposition if provided
@@ -187,9 +185,9 @@ def main():
     Y = plink_data.phenos[:, options.pheno]
 
     # Run GWAS
-    logger.info("Starting GWAS scan...")
-    if options.FAST:
-        results = runGWAS_fast(
+    if options.ORIG:
+        logger.info("Starting GWAS (original) scan...")
+        results = runGWAS_original(
             Y, K, plink_data,
             X0=X0,
             Kva=Kva,
@@ -199,15 +197,17 @@ def main():
             normalizeGenotype=options.normalizeGenotype,
         )
     else:
-        results = runGWAS_norm(
+        logger.info("Starting GWAS (fast) scan...")
+        results = runGWAS_fast(
             Y, K, plink_data,
             X0=X0,
             Kva=Kva,
             Kve=Kve,
             refit=options.refit,
-        REML=options.REML,
-        normalizeGenotype=options.normalizeGenotype,
-    )
+            REML=options.REML,
+            normalizeGenotype=options.normalizeGenotype,
+        )
+
     logger.info("Total: %.3fs", time.perf_counter() - t_total)
 
     with open(outFile, 'w') as out:

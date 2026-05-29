@@ -40,13 +40,28 @@ class LMM:
 
     """
 
-    def __init__(self, Y, K, Kva=[], Kve=[], X0=None, verbose=False):
+    def __init__(self, Y, K, Kva=None, Kve=None, X0=None, verbose=False):
         """
-        The constructor takes a phenotype vector or array of size n.
-        It takes a kinship matrix of size n x n.  Kva and Kve can be computed as Kva,Kve = linalg.eigh(K) and cached.
-        If they are not provided, the constructor will calculate them.
-        X0 is an optional covariate matrix of size n x q, where there are q covariates.
-        When this parameter is not provided, the constructor will set X0 to an n x 1 matrix of all ones to represent a mean effect.
+        Parameters
+        ----------
+        Y : array-like, shape (n,) or (n, 1)
+            Phenotype vector for n individuals. 1D or a 2D column vector are
+            both accepted; the constructor flattens to 1D internally. NaN
+            entries are removed along with the corresponding rows/columns of K
+            and X0 before fitting.
+        K : ndarray, shape (n, n)
+            Pre-computed kinship (realized relationship) matrix.
+        Kva : ndarray, shape (n,), optional
+            Eigenvalues of K from linalg.eigh(K). If None or empty the
+            eigendecomposition is computed here (expensive for large n).
+        Kve : ndarray, shape (n, n), optional
+            Eigenvectors of K from linalg.eigh(K). Must be provided together
+            with Kva; ignored if Kva is None or empty.
+        X0 : ndarray, shape (n, q), optional
+            Covariate matrix with q covariates. Defaults to a column of ones
+            (intercept only).
+        verbose : bool
+            Print progress messages to stderr.
         """
 
         if X0 is None:
@@ -55,7 +70,7 @@ class LMM:
 
         x = ~np.isnan(Y)
         x = x.reshape(-1,)
-        if not x.sum() == len(Y):
+        if x.sum() != len(Y): 
             if self.verbose:
                 sys.stderr.write(
                     "Removing %d missing values from Y\n" %
@@ -67,7 +82,7 @@ class LMM:
             Kve = []
         self.nonmissing = x
 
-        if len(Kva) == 0 or len(Kve) == 0:
+        if Kva is None or len(Kva) == 0 or Kve is None or len(Kve) == 0:
             if self.verbose:
                 sys.stderr.write(
                     "Obtaining eigendecomposition for %dx%d matrix\n" %

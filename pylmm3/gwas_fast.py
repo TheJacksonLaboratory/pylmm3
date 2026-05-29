@@ -18,6 +18,13 @@ from pylmm3.gwas import _GWAS_DTYPE
 
 logger = logging.getLogger(__name__)
 
+_GWAS_DTYPE = np.dtype([
+    ("SNP_ID",  "U50"),
+    ("BETA",    np.float64),
+    ("BETA_SD", np.float64),
+    ("F_STAT",  np.float64),
+    ("P_VALUE", np.float64),
+])
 
 def runGWAS(
     Y,
@@ -131,12 +138,11 @@ def runGWAS(
         bad = (D_vec <= 0) | ~np.isfinite(D_vec)
         bs[bad] = sd[bad] = ts[bad] = ps[bad] = np.nan
 
-        for i, sid in enumerate(buf_ids):
-            snp_ids.append(sid)
-            betas.append(float(bs[i]))
-            beta_sds.append(float(sd[i]))
-            f_stats.append(float(ts[i]))
-            p_values.append(float(ps[i]))
+        snp_ids.extend(buf_ids)
+        betas.extend(bs.tolist())
+        beta_sds.extend(sd.tolist())
+        f_stats.extend(ts.tolist())
+        p_values.extend(ps.tolist())
 
         buf_snps.clear()
         buf_ids.clear()
