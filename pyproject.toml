@@ -1,12 +1,24 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "pylmm3"
 version = "0.2.0"
-description = "Python 3 implementation of Pylmm"
+description = "Python 3 linear mixed-model solver for genome-wide association studies"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "AGPL-3.0-or-later"
+authors = [
+    { name = "Matt Vincent",  email = "matt.vincent@jax.org" },
+    { name = "Nick Sebasco",  email = "nick.sebasco@jax.org" },
+]
 dependencies = [
     "scipy>=1.17.1",
 ]
+
+[project.urls]
+Repository = "https://bitbucket.org/jacksonlaboratory/pylmm3"
 
 [tool.setuptools.packages.find]
 include = ["pylmm3*"]

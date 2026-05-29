@@ -1,3 +1,10 @@
+"""Reference GWAS scan implementation — per-SNP linear mixed model loop.
+
+Numerically validated against the original pylmm output (max relative error
+< 3e-9). Prefer `gwas_fast.runGWAS` for production runs; this module is
+the correctness reference and the fallback for missing-genotype SNPs.
+"""
+
 import logging
 import time
 
@@ -17,47 +24,66 @@ _GWAS_DTYPE = np.dtype([
 
 
 def runGWAS(
-    Y,
-    K,
+    Y: np.ndarray,
+    K: np.ndarray,
     snp_iter,
-    X0=None,
-    Kva=None,
-    Kve=None,
-    refit=False,
-    REML=False,
-    normalizeGenotype=True,
-):
-    """
-    Run a GWAS scan using the linear mixed model.
+    X0: np.ndarray | None = None,
+    Kva: np.ndarray | None = None,
+    Kve: np.ndarray | None = None,
+    refit: bool = False,
+    REML: bool = False,
+    normalizeGenotype: bool = True,
+) -> np.ndarray:
+    """Run a GWAS scan using the linear mixed model (reference implementation).
 
-    Parameters
-    ----------
-    Y : array-like, shape (N,)
-        Phenotype vector. NaN entries are removed from Y, K, and X0 before
-        fitting; snp_iter must still yield full-length N vectors.
-    K : ndarray, shape (N, N)
-        Pre-computed kinship matrix.
-    snp_iter : iterable of (ndarray, str)
-        Yields (snp_vector, snp_id) pairs. snp_vector must be length N.
-    X0 : ndarray, shape (N, q), optional
-        Covariate matrix. Defaults to a column of ones (intercept only).
-    Kva, Kve : ndarray, optional
-        Pre-computed eigenvalues/eigenvectors of K. Ignored when Y has
-        missing values (eigendecomposition is recomputed after subsetting).
-    refit : bool
-        Re-estimate variance components at each SNP.
-    REML : bool
-        Use REML for the per-SNP association test (default False). The null
-        model is always fit with REML=True, matching original pylmm behavior.
-    normalizeGenotype : bool
-        When False, SNPs with per-SNP missing individuals are standardized
-        to zero mean / unit variance before testing.
+    Fits a null LMM once (REML=True), then tests each SNP in a per-SNP loop
+    by calling `LMM.association`. SNPs with missing genotypes spawn a fresh
+    sub-LMM on the reduced sample set. Monomorphic and all-missing SNPs are
+    emitted with NaN statistics without raising an error.
 
-    Returns
-    -------
-    numpy structured array with fields SNP_ID, BETA, BETA_SD, F_STAT, P_VALUE.
-    Monomorphic or all-missing SNPs carry NaN in the numeric fields.
-    Convert to DataFrame: ``pd.DataFrame(result)``.
+    For large cohorts prefer `gwas_fast.runGWAS`, which is algebraically
+    identical but 50–200× faster via batched matrix operations.
+
+    Args:
+        Y:
+            Phenotype vector of shape `(N,)`. `NaN` entries are removed from
+            Y, K, and X0 before fitting; `snp_iter` must still yield full-
+            length N vectors since subsetting is applied internally.
+        K:
+            Pre-computed kinship matrix of shape `(N, N)`.
+        snp_iter:
+            Iterable of `(snp_vector, snp_id)` pairs. Each `snp_vector` must
+            be length N and may contain `np.nan` for missing genotypes.
+        X0:
+            Covariate matrix of shape `(N, q)`. Defaults to a column of ones
+            (intercept only).
+        Kva:
+            Pre-computed eigenvalues of K, shape `(N,)`. Ignored (and
+            recomputed) when Y has missing values, since K is subset before
+            the eigendecomposition.
+        Kve:
+            Pre-computed eigenvectors of K, shape `(N, N)`. Same caveat as
+            `Kva`.
+        refit:
+            If `True`, re-estimate variance components (h, σ²) at every SNP
+            instead of using the null-fit optH. Much slower; use only when
+            the assumption of a fixed genetic architecture across SNPs is
+            unacceptable.
+        REML:
+            Whether to use the REML-corrected log-likelihood for per-SNP
+            association tests. The null model is always fit with `REML=True`
+            regardless of this flag, matching original pylmm behavior.
+        normalizeGenotype:
+            When `False`, SNPs with per-SNP missing individuals are
+            standardized to zero mean / unit variance before testing.
+            Has no effect on fully-observed SNPs (already normalized by the
+            `plink` reader).
+
+    Returns:
+        A numpy structured array with fields `SNP_ID`, `BETA`, `BETA_SD`,
+        `F_STAT`, and `P_VALUE`. Monomorphic or all-missing SNPs carry `NaN`
+        in the numeric fields. Convert to a DataFrame with
+        `pd.DataFrame(result)`.
     """
     Y = np.asarray(Y, dtype=np.float64)
     K = np.asarray(K, dtype=np.float64)

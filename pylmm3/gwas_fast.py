@@ -1,11 +1,12 @@
-# Vectorized GWAS scan — see docs/gwas_fast_design.md for full derivation.
-#
-# The speedup: instead of calling Kve.T @ x per SNP (gemv), we batch B SNPs
-# into a matrix G and compute Kve.T @ G once (dgemm).  Everything else
-# follows from the Schur complement of the covariate block A in the per-SNP
-# information matrix XX_i.  A is constant across SNPs at fixed h=optH, so
-# we invert it once.  The batch formulas are algebraically identical to the
-# per-SNP loop in gwas.py.
+"""Vectorized GWAS scan — batched matrix implementation of the LMM association test.
+
+Instead of calling Kve.T @ x per SNP (gemv), B SNPs are batched into a matrix G
+and Kve.T @ G is computed once (dgemm). The per-SNP information matrix is then
+decomposed via the Schur complement of the fixed covariate block A, which is
+constant across SNPs at fixed h=optH and inverted only once. The batch formulas
+are algebraically identical to the per-SNP loop in gwas.py; see
+docs/gwas_fast_design.md for the full derivation and validation results.
+"""
 
 import logging
 import time
@@ -27,29 +28,68 @@ _GWAS_DTYPE = np.dtype([
 ])
 
 def runGWAS(
-    Y,
-    K,
+    Y: np.ndarray,
+    K: np.ndarray,
     snp_iter,
-    X0=None,
-    Kva=None,
-    Kve=None,
-    refit=False,
-    REML=False,
-    normalizeGenotype=True,
-    batch_size=2000,
-):
-    """
-    Vectorized drop-in replacement for pylmm3.gwas.runGWAS.
+    X0: np.ndarray | None = None,
+    Kva: np.ndarray | None = None,
+    Kve: np.ndarray | None = None,
+    refit: bool = False,
+    REML: bool = False,
+    normalizeGenotype: bool = True,
+    batch_size: int = 2000,
+) -> np.ndarray:
+    """Vectorized drop-in replacement for `pylmm3.gwas.runGWAS`.
 
-    Produces numerically identical results (max relative error < 3e-9).
-    SNPs with missing genotypes or refit=True fall back to the per-SNP
-    logic in gwas.py unchanged.  See docs/gwas_fast_design.md.
+    Produces numerically identical results (max relative error < 3e-9 vs
+    the reference implementation). SNPs with missing genotypes or when
+    `refit=True` fall back to the per-SNP loop from `gwas.py` unchanged,
+    flushing any buffered batch first to preserve output ordering.
 
-    Extra parameter
-    ---------------
-    batch_size : int
-        SNPs per matrix batch (default 2000).  Memory per batch:
-        n * batch_size * 8 bytes (≈ 16 MB for n=1000, batch=2000).
+    The fast path batches fully-observed, non-monomorphic SNPs into blocks
+    of `batch_size` columns and processes each block with a single dgemm
+    call (`Kve.T @ G`). Per-batch scalar quantities are derived from the
+    Schur complement of the fixed covariate block A (inverted once at the
+    null-fit h=optH). See `docs/gwas_fast_design.md` for the full derivation.
+
+    Args:
+        Y:
+            Phenotype vector of shape `(N,)`. `NaN` entries are removed from
+            Y, K, and X0 before fitting; `snp_iter` must still yield full-
+            length N vectors since subsetting is applied internally.
+        K:
+            Pre-computed kinship matrix of shape `(N, N)`.
+        snp_iter:
+            Iterable of `(snp_vector, snp_id)` pairs. Each `snp_vector` must
+            be length N and may contain `np.nan` for missing genotypes.
+        X0:
+            Covariate matrix of shape `(N, q)`. Defaults to a column of ones
+            (intercept only).
+        Kva:
+            Pre-computed eigenvalues of K, shape `(N,)`. Ignored (and
+            recomputed) when Y has missing values.
+        Kve:
+            Pre-computed eigenvectors of K, shape `(N, N)`. Same caveat as
+            `Kva`.
+        refit:
+            If `True`, re-estimate variance components at every SNP. Forces
+            the per-SNP fallback path for all SNPs, negating the speedup.
+        REML:
+            Whether to use REML for per-SNP association tests. The null model
+            is always fit with `REML=True` regardless of this flag.
+        normalizeGenotype:
+            When `False`, SNPs with per-SNP missing individuals are
+            standardized to zero mean / unit variance before testing.
+        batch_size:
+            Number of SNPs to accumulate into each matrix batch. Memory per
+            batch is approximately `n * batch_size * 8` bytes (≈ 16 MB for
+            n=1000, batch_size=2000). Reduce if memory is constrained.
+
+    Returns:
+        A numpy structured array with fields `SNP_ID`, `BETA`, `BETA_SD`,
+        `F_STAT`, and `P_VALUE`. Monomorphic or all-missing SNPs carry `NaN`
+        in the numeric fields. Convert to a DataFrame with
+        `pd.DataFrame(result)`.
     """
     Y = np.asarray(Y, dtype=np.float64)
     K = np.asarray(K, dtype=np.float64)
@@ -108,7 +148,18 @@ def runGWAS(
     buf_snps = []   # (n,) genotype vectors queued for the next batch
     buf_ids  = []
 
-    def flush_batch():
+    def flush_batch() -> None:
+        """Process all buffered SNPs as a single vectorized batch.
+
+        Rotates the buffer matrix G = stack(buf_snps) into the eigenbasis
+        with one dgemm, then computes per-SNP effect sizes and t-statistics
+        via the Schur complement formula derived in docs/gwas_fast_design.md.
+        Results are appended to the outer snp_ids/betas/... lists and the
+        buffer is cleared.
+
+        SNPs where D_vec <= 0 (collinear with covariates in the rotated basis)
+        receive NaN statistics rather than a division error.
+        """
         if not buf_snps:
             return
         B  = len(buf_snps)

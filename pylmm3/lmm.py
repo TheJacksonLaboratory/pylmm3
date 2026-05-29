@@ -15,6 +15,13 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+"""Linear mixed model (LMM) solver for GWAS — simplified EMMA/fastLMM implementation.
+
+Optimizes the model Y = X·β + u + ε where u ~ N(0, h·σ²·K) and ε ~ N(0, (1-h)·σ²·I).
+The three model parameters are heritability (h), covariate coefficients (β), and total
+phenotypic variance (σ²).
+"""
+
 import sys
 import time
 import numpy as np
@@ -24,44 +31,60 @@ from scipy import stats
 
 
 class LMM:
+    """Linear mixed model solver (EMMA/fastLMM style).
 
+    Fits the model Y = X·β + u + ε by maximum likelihood, where the genetic
+    random effect u ~ N(0, h·σ²·K) captures population structure. Heritability
+    h is the fraction of total variance explained by K.
+
+    All inputs are expected to be numpy arrays. The constructor removes
+    individuals with missing phenotype before any computation.
+
+    Attributes:
+        K: Kinship matrix subset to non-missing individuals, shape `(N, N)`.
+        Kva: Eigenvalues of K (clamped to ≥ 1e-6), shape `(N,)`.
+        Kve: Eigenvectors of K, shape `(N, N)`.
+        N: Number of non-missing individuals.
+        Y: Phenotype column vector, shape `(N, 1)`.
+        X0: Covariate matrix, shape `(N, q)`.
+        nonmissing: Boolean mask of length n (original) marking kept individuals.
+        optH: Optimal heritability from the most recent `fit()` call.
+        optSigma: Optimal total variance from the most recent `fit()` call.
+        optBeta: Optimal covariate coefficients from the most recent `fit()` call.
+        LLs: Grid of log-likelihoods computed during `fit()`.
     """
-          This is a simple version of EMMA/fastLMM.
-          The main purpose of this module is to take a phenotype vector (Y), a set of covariates (X) and a kinship matrix (K)
-          and to optimize this model by finding the maximum-likelihood estimates for the model parameters.
-          There are three model parameters: heritability (h), covariate coefficients (beta) and the total
-          phenotypic variance (sigma).
-          Heritability as defined here is the proportion of the total variance (sigma) that is attributed to
-          the kinship matrix.
 
-          For simplicity, we assume that everything being input is a numpy array.
-          If this is not the case, the module may throw an error as conversion from list to numpy array
-          is not done consistently.
+    def __init__(
+        self,
+        Y: np.ndarray,
+        K: np.ndarray,
+        Kva: np.ndarray | None = None,
+        Kve: np.ndarray | None = None,
+        X0: np.ndarray | None = None,
+        verbose: bool = False,
+    ) -> None:
+        """Initialize the LMM, removing missing phenotypes and computing eigens if needed.
 
-    """
-
-    def __init__(self, Y, K, Kva=None, Kve=None, X0=None, verbose=False):
-        """
-        Parameters
-        ----------
-        Y : array-like, shape (n,) or (n, 1)
-            Phenotype vector for n individuals. 1D or a 2D column vector are
-            both accepted; the constructor flattens to 1D internally. NaN
-            entries are removed along with the corresponding rows/columns of K
-            and X0 before fitting.
-        K : ndarray, shape (n, n)
-            Pre-computed kinship (realized relationship) matrix.
-        Kva : ndarray, shape (n,), optional
-            Eigenvalues of K from linalg.eigh(K). If None or empty the
-            eigendecomposition is computed here (expensive for large n).
-        Kve : ndarray, shape (n, n), optional
-            Eigenvectors of K from linalg.eigh(K). Must be provided together
-            with Kva; ignored if Kva is None or empty.
-        X0 : ndarray, shape (n, q), optional
-            Covariate matrix with q covariates. Defaults to a column of ones
-            (intercept only).
-        verbose : bool
-            Print progress messages to stderr.
+        Args:
+            Y:
+                Phenotype vector of shape `(n,)` or `(n, 1)`. Both 1-D and
+                column-vector layouts are accepted; internally flattened. `NaN`
+                entries are dropped, and corresponding rows/columns of K and X0
+                are removed before fitting.
+            K:
+                Pre-computed kinship matrix of shape `(n, n)`.
+            Kva:
+                Eigenvalues of K from `linalg.eigh(K)`, shape `(n,)`. If `None`
+                or empty, the eigendecomposition is computed here (expensive
+                for large n).
+            Kve:
+                Eigenvectors of K from `linalg.eigh(K)`, shape `(n, n)`. Must be
+                supplied together with Kva; ignored when Kva is absent.
+            X0:
+                Covariate matrix of shape `(n, q)`. Defaults to a column of
+                ones (intercept only).
+            verbose:
+                If `True`, write progress messages to stderr.
         """
 
         if X0 is None:
@@ -108,11 +131,18 @@ class LMM:
 
         self.transform()
 
-    def transform(self):
-        """
-           Computes a transformation on the phenotype vector and the covariate matrix.
-           The transformation is obtained by left multiplying each parameter by the transpose of the
-           eigenvector matrix of K (the kinship).
+    def transform(self) -> None:
+        """Rotate Y and X0 into the eigenbasis of K.
+
+        Left-multiplies Y and X0 by Kve.T. Because K = Kve·diag(Kva)·Kve.T,
+        this rotation diagonalizes the LMM covariance: after rotation,
+        Cov(Yt)_ii = σ²·(h·Kva_i + (1-h)), enabling elementwise precision
+        weights in all subsequent likelihood computations.
+
+        Also pre-allocates X0t_stack — X0t with one trailing column of ones
+        appended — used as a mutable buffer by `LL()` and `fit()`. When a
+        SNP vector is tested, column q of the buffer is overwritten in-place
+        with the rotated SNP, avoiding a new allocation per SNP.
         """
 
         self.Yt = self.Kve.T @ self.Y
@@ -120,13 +150,38 @@ class LMM:
         self.X0t_stack = np.hstack([self.X0t, np.ones((self.N, 1))])
         self.q = self.X0t.shape[1]
 
-    def getMLSoln(self, h, X):
-        """
-           Obtains the maximum-likelihood estimates for the covariate coefficients (beta),
-           the total variance of the trait (sigma) and also passes intermediates that can
-           be utilized in other functions. The input parameter h is a value between 0 and 1 and represents
-           the heritability or the proportion of the total variance attributed to genetics.  The X is the
-           covariate matrix.
+    def getMLSoln(
+        self,
+        h: float,
+        X: np.ndarray,
+    ) -> tuple:
+        """Compute the ML estimates of β and σ² at fixed heritability h.
+
+        At fixed h the LMM log-likelihood is maximized analytically. The
+        covariance in the rotated basis is diagonal, so WLS with precision
+        weights S_i = 1/(h·λ_i + (1-h)) gives the GLS estimator for β.
+
+        Args:
+            h:
+                Heritability in [0, 1]. Determines the precision weights
+                S_i = 1/(h·λ_i + (1-h)) applied to all weighted products.
+            X:
+                Design matrix in the *rotated* eigenbasis, shape `(N, q+k)`.
+                Must already have been multiplied by Kve.T; typically X0t or
+                X0t_stack with a SNP column filled in.
+
+        Returns:
+            A 5-tuple `(beta, sigma, Q, XX_i, XX)` where:
+
+            - **beta** — GLS coefficient vector, shape `(q+k, 1)`.
+            - **sigma** — ML estimate of σ² (scalar array). Computed as
+              Q / (N − (q+k)).
+            - **Q** — weighted residual SS: (Yt − X·β).T·diag(S)·(Yt − X·β).
+            - **XX_i** — inverse of the precision-weighted information matrix
+              X.T·diag(S)·X, shape `(q+k, q+k)`. Its diagonal gives the
+              sampling variances of β (up to σ²).
+            - **XX** — the precision-weighted information matrix before
+              inversion, shape `(q+k, q+k)`.
         """
 
         S = 1.0 / (h * self.Kva + (1.0 - h))
@@ -139,20 +194,90 @@ class LMM:
         sigma = Q * 1.0 / (float(self.N) - float(X.shape[1]))
         return beta, sigma, Q, XX_i, XX
 
-    def LL_brent(self, h, X=None, REML=False):
-        # brent will not be bounded by the specified bracket.
-        # I return a large number if we encounter h < 0 to avoid errors in LL
-        # computation during the search.
+    def LL_brent(
+        self,
+        h: float,
+        X: np.ndarray | None = None,
+        REML: bool = False,
+    ) -> float:
+        """Negated log-likelihood for use as a Brent minimization objective.
+
+        Returns the negative of `LL(h)` so that `scipy.optimize.brent`
+        (which minimizes) finds the ML maximum. Returns a large constant
+        (1e6) when h < 0 because Brent's method is not strictly bounded by its
+        bracket and can stray negative, where the LL formula is undefined.
+
+        Args:
+            h:
+                Heritability candidate. Values below 0 return 1e6 without
+                evaluating the likelihood.
+            X:
+                Pre-rotated design matrix passed through to `LL()`. When
+                `None`, `LL()` falls back to X0t.
+            REML:
+                Whether to evaluate the REML-corrected log-likelihood.
+
+        Returns:
+            Negative log-likelihood (float), or 1e6 if h < 0.
+        """
         if h < 0:
             return 1e6
         return -self.LL(h, X, stack=False, REML=REML)[0]
 
-    def LL(self, h, X=None, stack=True, REML=False):
-        """
-           Computes the log-likelihood for a given heritability (h).  If X==None, then the
-           default X0t will be used.  If X is set and stack=True, then X0t will be matrix concatenated with
-           the input X.  If stack is false, then X is used in place of X0t in the LL calculation.
-           REML is computed by adding additional terms to the standard LL and can be computed by setting REML=True.
+    def LL(
+        self,
+        h: float,
+        X: np.ndarray | None = None,
+        stack: bool = True,
+        REML: bool = False,
+    ) -> tuple:
+        """Compute the profile log-likelihood of the LMM at fixed heritability h.
+
+        With β and σ² profiled out analytically (via `getMLSoln`), the
+        ML log-likelihood reduces to:
+
+            LL = -½ [n·log(2π) + Σlog(h·λᵢ + (1-h)) + n + n·log(Q/n)]
+
+        where Σlog(h·λᵢ + (1-h)) is the log-determinant of the scaled
+        covariance Σ/σ², and Q/n is the profiled σ².
+
+        When `REML=True`, the standard REML correction is added:
+
+            +½ [q·log(2π·σ²) + log|X.T·X| − log|X.T·Σ⁻¹·X|]
+
+        **Known issue (BUG-B):** `linalg.det()` overflows for matrices
+        larger than ~500×500. The REML path will produce `inf` on full
+        cohorts. Fix: replace with `np.linalg.slogdet`.
+
+        Args:
+            h:
+                Heritability in [0, 1].
+            X:
+                Covariate/SNP design vector or matrix. Interpretation depends
+                on `stack`:
+
+                - `None` → use X0t (null model with covariates only).
+                - array + `stack=True` → rotate X by Kve.T and write into
+                  column q of X0t_stack (modifies the buffer in-place).
+                - array + `stack=False` → use X directly; caller is
+                  responsible for rotation into the eigenbasis.
+            stack:
+                If `True` and X is not `None`, rotate and stack X onto X0t
+                before computing. Set `False` when X is already in the rotated
+                eigenbasis (e.g. inside `fit()`).
+            REML:
+                If `True`, add the REML correction term to the ML
+                log-likelihood. Default `False` for association tests;
+                the null model fit always passes `True` explicitly.
+
+        Returns:
+            A 4-tuple `(LL, beta, sigma, XX_i)`:
+
+            - **LL** — scalar log-likelihood value.
+            - **beta** — ML coefficient vector from `getMLSoln`.
+            - **sigma** — ML total variance estimate from `getMLSoln`.
+            - **XX_i** — inverse precision-weighted information matrix from
+              `getMLSoln`; its diagonal gives sampling variances of β.
         """
 
         if X is None:
@@ -176,13 +301,34 @@ class LMM:
         LL = LL.sum()
         return LL, beta, sigma, XX_i
 
-    def getMax(self, H, X=None, REML=False):
-        """
-           Helper functions for .fit(...).
-           This function takes a set of LLs computed over a grid and finds possible regions
-           containing a maximum.  Within these regions, a Brent search is performed to find the
-           optimum.
+    def getMax(
+        self,
+        H: np.ndarray,
+        X: np.ndarray | None = None,
+        REML: bool = False,
+    ) -> float:
+        """Find the MLE of h by scanning the LL grid and refining with Brent's method.
 
+        Identifies local maxima in `self.LLs` (points strictly higher than
+        both neighbors), brackets each with adjacent grid points, and calls
+        `scipy.optimize.brent` via `LL_brent` to find the precise optimum
+        within each bracket. When no interior maximum exists, falls back to
+        whichever grid endpoint has the higher LL. If multiple optima are
+        found, the first is returned with a verbose warning.
+
+        Args:
+            H:
+                Heritability grid array, shape `(ngrids,)`. Must be the same
+                grid used to compute `self.LLs` so that indices correspond.
+            X:
+                Pre-rotated design matrix in the eigenbasis, passed through to
+                `LL_brent`. Typically X0t or X0t_stack.
+            REML:
+                Whether to use the REML-corrected likelihood during Brent
+                refinement. Must match the criterion used to build `self.LLs`.
+
+        Returns:
+            Optimal heritability estimate (float) in approximately [0, 1].
         """
         n = len(self.LLs)
         HOpt = []
@@ -207,14 +353,46 @@ class LMM:
         else:
             return H[n - 1]
 
-    def fit(self, X=None, ngrids=100, REML=True):
-        """
-           Finds the maximum-likelihood solution for the heritability (h) given the current parameters.
-           X can be passed and will transformed and concatenated to X0t.  Otherwise, X0t is used as
-           the covariate matrix.
+    def fit(
+        self,
+        X: np.ndarray | None = None,
+        ngrids: int = 100,
+        REML: bool = True,
+    ) -> tuple:
+        """Find the MLE of heritability and store all associated ML quantities.
 
-           This function calculates the LLs over a grid and then uses .getMax(...) to find the optimum.
-           Given this optimum, the function computes the LL and associated ML solutions.
+        Evaluates the log-likelihood on a uniform grid of `ngrids` points in
+        [0, 1), then calls `getMax` to bracket and refine the optimum with
+        Brent's method. Stores results in instance attributes for use by
+        `association`.
+
+        Typically called once on the null model (no SNP in X) before the GWAS
+        scan. Callers that need to refit variance components per SNP pass X
+        explicitly.
+
+        Args:
+            X:
+                Optional SNP or additional covariate vector/matrix in the
+                *unrotated* space, shape `(N, 1)`. If provided, it is rotated
+                by Kve.T and appended to X0t before fitting. Pass `None`
+                (default) for the null model with covariates only.
+            ngrids:
+                Number of equally spaced heritability values to evaluate
+                before refining with Brent. Higher values reduce the chance
+                of missing a narrow peak but cost proportionally more LL
+                evaluations.
+            REML:
+                Whether to maximize the REML-corrected log-likelihood.
+                The null model should always use `REML=True` (default) to
+                match the original pylmm behavior. Per-SNP association tests
+                typically use `REML=False`.
+
+        Returns:
+            A 4-tuple `(hmax, beta, sigma, LL)` where `hmax` is the optimal
+            heritability, `beta` and `sigma` are the ML coefficient and variance
+            estimates at `hmax`, and `LL` is the maximized log-likelihood.
+            The same values are also stored in `self.optH`, `self.optBeta`,
+            `self.optSigma`, and `self.optLL`.
         """
 
         if X is None:
@@ -238,11 +416,46 @@ class LMM:
 
         return hmax, beta, sigma, L
 
-    def association(self, X, h=None, stack=True, REML=True, returnBeta=False):
-        """
-          Calculates association statitics for the SNPs encoded in the vector X of size n.
-          If h == None, the optimal h stored in optH is used.
+    def association(
+        self,
+        X: np.ndarray,
+        h: float | None = None,
+        stack: bool = True,
+        REML: bool = True,
+        returnBeta: bool = False,
+    ) -> tuple:
+        """Compute the association statistic for a single SNP.
 
+        Appends the SNP vector X to the covariate matrix, evaluates the LL at
+        the fixed heritability h (defaulting to the null-fit optH), and
+        extracts the t-statistic and p-value for the SNP's effect size from
+        the last row/column of the information matrix inverse.
+
+        Args:
+            X:
+                SNP genotype vector or column matrix in the *unrotated* space,
+                shape `(N, 1)`. Rotated internally when `stack=True`.
+            h:
+                Heritability to use for the association test. When `None`
+                (default), `self.optH` from the null fit is used. Passing an
+                explicit value re-evaluates the LL at that h without touching
+                stored optH.
+            stack:
+                If `True` (default), rotate X by Kve.T and write it into
+                column q of X0t_stack before computing. Set `False` only
+                when X is already in the rotated eigenbasis.
+            REML:
+                Whether to evaluate the REML-corrected log-likelihood for the
+                association test. The null model is always fit with `REML=True`;
+                per-SNP tests default to `False`.
+            returnBeta:
+                If `True`, also return the SNP effect size and its sampling
+                variance (var·σ²) in addition to the test statistics.
+
+        Returns:
+            `(ts, ps)` by default, or `(ts, ps, beta, betaVar)` when
+            `returnBeta=True`. `ts` is the t-statistic and `ps` is the
+            two-sided p-value for the SNP effect.
         """
         if stack:
             self.X0t_stack[:, self.q] = (self.Kve.T @ X)[:, 0]
@@ -260,16 +473,53 @@ class LMM:
                                                       q - 1].sum() * sigma
         return ts, ps
 
-    def tstat(self, beta, var, sigma, q, log=False):
-        """
-           Calculates a t-statistic and associated p-value given the estimate of beta and its standard error.
-           This is actually an F-test, but when only one hypothesis is being performed, it reduces to a t-test.
+    def tstat(
+        self,
+        beta: np.ndarray,
+        var: np.ndarray,
+        sigma: np.ndarray,
+        q: int,
+        log: bool = False,
+    ) -> tuple[float, float]:
+        """Compute a t-statistic and two-sided p-value for a single effect estimate.
+
+        The test statistic is t = β / SE(β), where SE(β) = √(var·σ²). Here
+        `var` is the diagonal element of XX_i corresponding to the SNP
+        coefficient, and `sigma` is the ML total variance estimate, so var·σ²
+        is the sampling variance of β. Although this is formally an F-test,
+        with a single SNP hypothesis it reduces to a two-sided t-test with
+        N − q degrees of freedom.
+
+        Uses `stats.t.sf` (survival function) rather than the CDF complement
+        for better numerical precision at extreme p-values.
+
+        Args:
+            beta:
+                ML estimate of the SNP effect size. Expected to be a
+                length-1 array (scalar wrapped in a numpy array).
+            var:
+                Diagonal element of XX_i for the SNP coefficient. Combined
+                with `sigma` gives the sampling variance: var·sigma.
+            sigma:
+                ML total variance estimate σ² from `getMLSoln`.
+            q:
+                Number of columns in the full design matrix (covariates + SNP).
+                Used as the df adjustment: df = N − q.
+            log:
+                If `True`, return the natural log of the p-value using
+                `stats.t.logsf` instead of the raw p-value. Useful for very
+                small p-values where the linear-scale result would underflow.
+
+        Returns:
+            `(ts, ps)` — the t-statistic and p-value (or log p-value when
+            `log=True`) as Python floats extracted via `.sum()`.
+
+        Raises:
+            Exception: If `ts` or `ps` have length != 1, indicating an
+                unexpected shape in the intermediate arrays.
         """
 
         ts = beta / np.sqrt(var * sigma)
-        # ps = 2.0*(1.0 - stats.t.cdf(np.abs(ts), self.N-q))
-        # sf == survival function - this is more accurate -- could also use
-        # logsf if the precision is not good enough
         if log:
             ps = np.log(2.0) + stats.t.logsf(np.abs(ts), self.N - q)
         else:
@@ -278,15 +528,28 @@ class LMM:
             raise Exception("Something bad happened :(")
         return ts.sum(), ps.sum()
 
-    def plotFit(self, color='b-', title=''):
-        """
-           Simple function to visualize the likelihood space.  It takes the LLs
-           calcualted over a grid and normalizes them by subtracting off the mean and exponentiating.
-           The resulting "probabilities" are normalized to one and plotted against heritability.
-           This can be seen as an approximation to the posterior distribuiton of heritability.
+    def plotFit(
+        self,
+        color: str = 'b-',
+        title: str = '',
+    ) -> None:
+        """Plot an approximate posterior distribution over heritability.
 
-           For diagnostic purposes this lets you see if there is one distinct maximum or multiple
-           and what the variance of the parameter looks like.
+        Converts the grid log-likelihoods to normalized probabilities via
+        exp(LL − max(LL)) / Z. With a flat prior on h, this is proportional
+        to the true posterior over heritability. Use this after `fit()` to
+        visually diagnose whether the likelihood surface has one clean peak or
+        multiple local optima, and to assess uncertainty in the heritability
+        estimate.
+
+        Requires matplotlib; imported lazily so it is not a hard dependency.
+
+        Args:
+            color:
+                matplotlib line style string passed directly to `pl.plot`.
+                Defaults to `'b-'` (solid blue).
+            title:
+                Plot title string passed to `pl.title`.
         """
         import matplotlib.pyplot as pl
 
@@ -299,7 +562,17 @@ class LMM:
         pl.ylabel("Probability of data")
         pl.title(title)
 
-    def meanAndVar(self):
+    def meanAndVar(self) -> tuple[float, float]:
+        """Compute the mean and variance of h under the approximate posterior.
+
+        Uses the same normalized probability weights as `plotFit`: treats
+        exp(LL − max(LL)) / Z as a discrete distribution over the heritability
+        grid and computes its first two central moments.
+
+        Returns:
+            `(mean, variance)` of heritability h under the grid-based
+            approximate posterior.
+        """
 
         mx = self.LLs.max()
         p = np.exp(self.LLs - mx)

@@ -1,21 +1,39 @@
+"""Kinship (realized relationship) matrix estimation from SNP genotypes."""
+
 import numpy as np
 
 
-def calculateKinship(W: np.ndarray, center: bool = False) -> np.ndarray:
-    """
-    Compute the realized relationship matrix (RRM/GRM) from a raw genotype
-    matrix W of shape (n_samples, n_snps).
+def calculateKinship(
+    W: np.ndarray,
+    center: bool = False,
+) -> np.ndarray:
+    """Compute the realized relationship matrix (RRM/GRM) from a raw genotype matrix.
 
     Each SNP column is imputed (missing → column mean), standardized to zero
-    mean and unit variance, and invariant SNPs are dropped. K is divided by
-    the number of valid SNPs used, not total SNPs.
+    mean and unit variance, and invariant SNPs are dropped. The result is
+    divided by the number of valid (non-invariant) SNPs retained, not the
+    total column count of W.
 
-    Arguments:
-        W: raw (un-normalized) SNP matrix of shape (n_samples, n_snps)
-        center: apply EMMA-style trace normalization so that tr(K) = n - 1.
+    When `center=False` (the CLI default), the returned K will differ
+    numerically from files produced by the original pylmm if any SNPs were
+    monomorphic — see docs/kinship_denominator_fix.md.
+
+    Args:
+        W:
+            Raw (un-normalized) SNP matrix of shape `(n_samples, n_snps)`.
+            Missing values should be encoded as `np.nan`.
+        center:
+            If `True`, apply EMMA-style trace normalization so that
+            `trace(K) == n - 1`. This absorbs the per-SNP denominator
+            difference, making the result identical to the original pylmm
+            output regardless of how many SNPs were filtered.
 
     Returns:
-        realized relationship matrix of shape (n_samples, n_samples)
+        Realized relationship matrix of shape `(n_samples, n_samples)`.
+
+    Raises:
+        ValueError: If every SNP column is invariant (zero variance after
+            imputation), leaving no valid SNPs to build K from.
     """
     n = W.shape[0]
     W = W.astype(np.float64, copy=True)
