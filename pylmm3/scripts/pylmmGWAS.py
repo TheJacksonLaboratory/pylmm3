@@ -10,7 +10,8 @@ import numpy as np
 from argparse import ArgumentParser
 
 from pylmm3 import input
-from pylmm3.gwas import runGWAS
+from pylmm3.gwas_fast import runGWAS as runGWAS_fast
+from pylmm3.gwas import runGWAS as runGWAS_norm
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ def main():
         help="Use REML for the per-SNP association test (null model always uses REML).")
     advancedGroup.add_argument(
         "--eigen", dest="eigenfile",
-        help="Base path for pre-computed eigendecomposition (<base>.Kva and <base>.Kve).")
+        help="Base path for pre-computed eigendecomposition (<base>.kva and <base>.kve).")
     advancedGroup.add_argument(
         "--noMean", dest="noMean", default=False, action="store_true",
         help="Suppress automatic global mean covariate when --covfile is provided.")
@@ -85,6 +86,9 @@ def main():
     experimentalGroup.add_argument(
         "--kfile2", dest="kfile2",
         help="Second kinship matrix for confounding correction (not implemented).")
+    experimentalGroup.add_argument(
+        "--fast", action="store_true", dest="FAST", default=False,
+        help="Use the fast GWAS implementation (default is standard implementation).")
 
     parser.add_argument("outfile", help="Output path for GWAS results.")
 
@@ -176,20 +180,31 @@ def main():
     Kva, Kve = None, None
     if options.eigenfile:
         logger.info("Loading pre-computed eigendecomposition...")
-        Kva = np.load(options.eigenfile + ".Kva")
-        Kve = np.load(options.eigenfile + ".Kve")
+        Kva = np.loadtxt(options.eigenfile + ".kva")
+        Kve = np.loadtxt(options.eigenfile + ".kve")
 
     # Phenotype vector — NaN removal is handled inside run_gwas
     Y = plink_data.phenos[:, options.pheno]
 
     # Run GWAS
     logger.info("Starting GWAS scan...")
-    results = runGWAS(
-        Y, K, plink_data,
-        X0=X0,
-        Kva=Kva,
-        Kve=Kve,
-        refit=options.refit,
+    if options.FAST:
+        results = runGWAS_fast(
+            Y, K, plink_data,
+            X0=X0,
+            Kva=Kva,
+            Kve=Kve,
+            refit=options.refit,
+            REML=options.REML,
+            normalizeGenotype=options.normalizeGenotype,
+        )
+    else:
+        results = runGWAS_norm(
+            Y, K, plink_data,
+            X0=X0,
+            Kva=Kva,
+            Kve=Kve,
+            refit=options.refit,
         REML=options.REML,
         normalizeGenotype=options.normalizeGenotype,
     )
