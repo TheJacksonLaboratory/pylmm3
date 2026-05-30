@@ -651,26 +651,7 @@ class plink:
         P = np.array(P).T
         return P
 
-    def getCovariates(
-        self,
-        covFile: str | None = None,
-    ) -> np.ndarray | None:
-        """Load a covariate matrix and reorder rows to match `self.indivs`.
-
-        The file is whitespace-delimited with columns
-        `fam_id indiv_id cov1 [cov2 ...]`. Values of `'NA'` are converted to
-        `np.nan`. Rows are reordered to match `self.indivs`; individuals in
-        the covariate file but absent from the genotype dataset are dropped.
-
-        Args:
-            covFile:
-                Path to the covariate file. If `None` or the file does not
-                exist, a message is written to stderr and `None` is returned.
-
-        Returns:
-            Covariate matrix of shape `(N, num_covariates)`, or `None` if
-            the file was not found.
-        """
+    def getCovariates(self, covFile=None):
         if not os.path.isfile(covFile):
             sys.stderr.write("Could not find covariate file: %s\n" % (covFile))
             return
@@ -696,3 +677,31 @@ class plink:
         P = P[L, :]
 
         return P
+
+
+def load_snp_matrix(plink_data: "plink", num_snps: int | None = None) -> np.ndarray:
+    """Load un-normalized SNPs into an (n_samples, n_snps) float64 array.
+
+    Calls getSNPIterator() once to obtain numSNPs for pre-allocation, then
+    iterates via the plink object to fill the matrix. Modifies
+    plink_data.normGenotype in place (sets to False).
+
+    Args:
+        plink_data: An initialized plink object (BED, TPED, or EMMA format).
+        num_snps:   Override numSNPs (only meaningful for EMMA format).
+
+    Returns:
+        float64 array of shape (n_samples, n_snps).
+    """
+    plink_data.normGenotype = False
+    plink_data.getSNPIterator()
+    if num_snps is not None:
+        plink_data.numSNPs = num_snps
+
+    n = len(plink_data.indivs)
+    W = np.empty((n, plink_data.numSNPs), dtype=np.float64)
+    j = 0
+    for snp, _ in plink_data:
+        W[:, j] = snp
+        j += 1
+    return W[:, :j]

@@ -41,10 +41,10 @@ def main():
 
     basicGroup = parser.add_argument_group("Basic Options")
 
-    basicGroup.add_argument("--tfile", dest="tfile",
-                            help="The base for a PLINK tped file")
     basicGroup.add_argument("--bfile", dest="bfile",
                             help="The base for a PLINK binary ped file")
+    basicGroup.add_argument("--tfile", dest="tfile",
+                            help="The base for a PLINK tped file")
     basicGroup.add_argument(
         "--emmaSNP", dest="emmaFile", default=None,
         help="EMMA-format genotype file (individuals on rows, SNPs on columns).")
