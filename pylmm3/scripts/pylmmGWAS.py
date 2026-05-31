@@ -170,7 +170,10 @@ def main():
     t0 = time.perf_counter()
     open_func = gzip.open if options.kfile.endswith('.gz') else open
     with open_func(options.kfile, 'rt') as f:
-        K = np.fromstring(f.read(), sep=' ')
+        # np.fromstring(str, sep=' ') was deprecated in NumPy 1.14 and removed
+        # in NumPy 2.0. np.loadtxt() reads the same space-separated text format
+        # and returns the (N, N) matrix directly (reshape below is a no-op).
+        K = np.loadtxt(f)
     K = K.reshape((len(plink_data.indivs), len(plink_data.indivs)))
     logger.info("Read %dx%d kinship in %.3fs", K.shape[0], K.shape[1], time.perf_counter() - t0)
 

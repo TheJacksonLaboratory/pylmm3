@@ -294,8 +294,13 @@ class LMM:
         LL = -0.5 * LL
 
         if REML:
-            LL_REML_part = q * np.log(2.0 * np.pi * sigma) + np.log(
-                linalg.det(X.T @ X)) - np.log(linalg.det(XX))
+            # linalg.det() overflows to inf when the number of covariates q ≥ ~100
+            # (e.g. principal-component covariates), making log(inf) - log(inf) = nan.
+            # np.linalg.slogdet() computes the log-determinant via LU without ever
+            # materialising the determinant itself, so it is numerically safe for any q.
+            _, logdet_XTX = np.linalg.slogdet(X.T @ X)
+            _, logdet_XX  = np.linalg.slogdet(XX)
+            LL_REML_part = q * np.log(2.0 * np.pi * sigma) + logdet_XTX - logdet_XX
             LL = LL + 0.5 * LL_REML_part
 
         LL = LL.sum()
