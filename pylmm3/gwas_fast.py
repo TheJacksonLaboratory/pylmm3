@@ -152,9 +152,8 @@ def runGWAS(
 
         Rotates the buffer matrix G = stack(buf_snps) into the eigenbasis
         with one dgemm, then computes per-SNP effect sizes and t-statistics
-        via the Schur complement formula derived in docs/gwas_fast_design.md.
-        Results are appended to the outer snp_ids/betas/... lists and the
-        buffer is cleared.
+        via the Schur complement formula. Results are appended to the outer 
+        snp_ids/betas/... lists and the buffer is cleared.
 
         SNPs where D_vec <= 0 (collinear with covariates in the rotated basis)
         receive NaN statistics rather than a division error.
