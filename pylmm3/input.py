@@ -419,9 +419,6 @@ class plink:
         If the variance is zero (monomorphic SNP), the array is centered but
         not scaled (s is set to 1.0 to avoid division by zero).
 
-        Known issue (CR-A): the `if s == 0:` branch is unreachable — s is
-        either 1.0 (when var == 0) or sqrt(positive). See CURRENT_ISSUES.md.
-
         Args:
             G:
                 Float64 genotype array of shape `(N,)`, possibly containing
@@ -438,15 +435,10 @@ class plink:
             return G
 
         m = G[x].mean()
-        if G[x].var() == 0:
-            s = 1.0
-        else:
-            s = np.sqrt(G[x].var())
+        v = G[x].var()
+        s = 1.0 if v == 0 else np.sqrt(v)
         G[np.isnan(G)] = m
-        if s == 0:
-            G = G - m
-        else:
-            G = (G - m) / s
+        G = (G - m) / s
 
         return G
     

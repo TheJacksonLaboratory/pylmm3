@@ -29,6 +29,7 @@ Two command-line tools and a clean Python API:
 - [CLI Reference](#cli-reference)
 - [Logging](#logging)
 - [Output Format](#output-format)
+- [Testing](#testing)
 - [How It Works](#how-it-works)
 - [Known Limitations](#known-limitations)
 - [Authors](#authors)
@@ -455,6 +456,41 @@ SNPs are written as `nan` across all value columns rather than being silently dr
 | `BETA_SD` | float | Standard error of the effect estimate |
 | `F_STAT` | float | t-statistic for the SNP association test *(column name is a historical artifact — this is a t-statistic)* |
 | `P_VALUE` | float | Two-tailed p-value from the t-distribution with n − q degrees of freedom |
+
+---
+
+## Testing
+
+The test suite lives in [`tests/`](tests/) and uses [pytest](https://docs.pytest.org).
+It is fully self-contained — synthetic data is generated from a fixed random seed
+and temporary PLINK filesets are written per test, so **no external fixture files
+are required**.
+
+```bash
+uv run pytest -q          # quiet — one line of summary
+uv run pytest -v          # verbose — one line per test
+```
+
+Run a subset while developing:
+
+```bash
+uv run pytest tests/test_gwas.py                                  # one file
+uv run pytest tests/test_lmm.py::test_tstat_matches_scipy         # one test
+uv run pytest -k gwas                                             # by name pattern
+uv run pytest -x                                                  # stop at first failure
+```
+
+### What the suite covers
+
+| File | Module under test | Focus |
+|------|-------------------|-------|
+| `tests/test_lmm.py` | `pylmm3.lmm` | Missing-phenotype removal, eigendecomposition + clamping, `fit()`, single-SNP `association()`, `tstat` vs `scipy.stats`, and the REML log-likelihood staying finite when `det(XᵀX)` overflows (slogdet regression guard) |
+| `tests/test_kinship.py` | `pylmm3.kinship` | Shape/symmetry, `center=True` → `trace(K) = n − 1`, invariant-SNP dropping, NaN imputation |
+| `tests/test_input.py` | `pylmm3.input` | Genotype normalization, TPED/BED decoding, end-to-end EMMA/TPED/BED readers, phenotype `NA`/`-9` → `NaN` |
+| `tests/test_gwas.py` | `pylmm3.gwas`, `pylmm3.gwas_fast` | Output structure, signal recovery, monomorphic/missing handling, and a cross-validation that the vectorized `gwas_fast` is numerically identical to the reference `gwas` |
+
+Shared fixtures (seeded RNG, synthetic genotypes/kinship/phenotype, and temporary
+PLINK filesets) live in [`tests/conftest.py`](tests/conftest.py).
 
 ---
 
