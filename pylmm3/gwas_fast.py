@@ -15,8 +15,6 @@ import numpy as np
 from scipy import linalg, stats
 
 from pylmm3.lmm import LMM
-from pylmm3.gwas import _GWAS_DTYPE
-
 logger = logging.getLogger(__name__)
 
 _GWAS_DTYPE = np.dtype([
@@ -188,8 +186,9 @@ def runGWAS(
 
         ps  = 2.0 * stats.t.sf(np.abs(ts), dof)
 
-        # D_vec <= 0 means the SNP is collinear with covariates in the rotated basis.
-        bad = (D_vec <= 0) | ~np.isfinite(D_vec)
+        # D_vec <= 0: collinear with covariates. ~isfinite(ts): sigma=0 or other
+        # degenerate fit that produces inf/nan t-stats.
+        bad = (D_vec <= 0) | ~np.isfinite(ts)
         bs[bad] = sd[bad] = ts[bad] = ps[bad] = np.nan
 
         snp_ids.extend(buf_ids)

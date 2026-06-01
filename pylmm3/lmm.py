@@ -119,7 +119,7 @@ class LMM:
             logger.debug("Eigendecomposition done in %.3fs", time.perf_counter() - begin)
 
         self.K = K
-        self.Kva = Kva
+        self.Kva = np.array(Kva, dtype=np.float64, copy=True)
         self.Kve = Kve
         self.N = self.K.shape[0]
         self.Y = Y.reshape((self.N, 1))
@@ -338,7 +338,7 @@ class LMM:
         """
         n = len(self.LLs)
         HOpt = []
-        for i in range(1, n - 2):
+        for i in range(1, n - 1):
             if self.LLs[i - 1] < self.LLs[i] and self.LLs[i] > self.LLs[i + 1]:
                 HOpt.append(optimize.brent(self.LL_brent, args=(
                     X, REML), brack=(H[i - 1], H[i + 1])))

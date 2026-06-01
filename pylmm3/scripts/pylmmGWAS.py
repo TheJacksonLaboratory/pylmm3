@@ -18,11 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 def _write_results(out, results):
-    out.write("\t".join(["SNP_ID", "BETA", "BETA_SD", "F_STAT", "P_VALUE"]) + "\n")
+    out.write("SNP_ID\tBETA\tBETA_SD\tF_STAT\tP_VALUE\n")
     for row in results:
-        out.write("\t".join([str(x) for x in [
-            row["SNP_ID"], row["BETA"], row["BETA_SD"], row["F_STAT"], row["P_VALUE"]
-        ]]) + "\n")
+        out.write(f"{row['SNP_ID']}\t{row['BETA']:.10g}\t{row['BETA_SD']:.10g}\t{row['F_STAT']:.10g}\t{row['P_VALUE']:.10g}\n")
 
 
 def main():
