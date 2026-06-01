@@ -91,6 +91,14 @@ class LMM:
             X0 = np.ones(len(Y)).reshape(len(Y), 1)
         self.verbose = verbose
 
+        # Initialized here so callers can check without having called fit() first.
+        self.optH     = None
+        self.optLL    = None
+        self.optBeta  = None
+        self.optSigma = None
+        self.LLs      = None
+        self.H        = None
+
         x = ~np.isnan(Y)
         x = x.reshape(-1,)
         if x.sum() != len(Y): 
@@ -99,7 +107,7 @@ class LMM:
                     "Removing %d missing values from Y\n" %
                     ((~x).sum()))
             Y = Y[x]
-            K = K[x, :][:, x]
+            K = K[np.ix_(x, x)]
             X0 = X0[x, :]
             Kva = []
             Kve = []
@@ -529,9 +537,10 @@ class LMM:
             ps = np.log(2.0) + stats.t.logsf(np.abs(ts), self.N - q)
         else:
             ps = 2.0 * (stats.t.sf(np.abs(ts), self.N - q))
-        if not len(ts) == 1 or not len(ps) == 1:
-            raise Exception("Something bad happened :(")
-        return ts.sum(), ps.sum()
+        # len() raises TypeError on 0-D arrays; .size is unambiguous for any shape.
+        if ts.size != 1 or ps.size != 1:
+            raise ValueError(f"Expected scalar t/p values, got shapes {ts.shape}, {ps.shape}")
+        return float(ts.flat[0]), float(ps.flat[0])
 
     def plotFit(
         self,

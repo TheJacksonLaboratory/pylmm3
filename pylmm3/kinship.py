@@ -56,3 +56,4 @@ def calculateKinship(
         return (n - 1) * K / S
 
     return K
+

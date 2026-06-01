@@ -23,6 +23,11 @@ Repository = "https://bitbucket.org/jacksonlaboratory/pylmm3"
 [tool.setuptools.packages.find]
 include = ["pylmm3*"]
 
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
+
 [project.scripts]
 pylmmGWAS = "pylmm3.scripts.pylmmGWAS:main"
 pylmmKinship = "pylmm3.scripts.pylmmKinship:main"

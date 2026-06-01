@@ -9,28 +9,10 @@ from argparse import ArgumentParser
 from scipy.linalg import eigh
 
 from pylmm3 import input
+from pylmm3.input import load_snp_matrix
 from pylmm3.kinship import calculateKinship
 
 logger = logging.getLogger(__name__)
-
-
-def _load_snp_matrix(plink_data, num_snps: int = None) -> np.ndarray:
-    """
-    Load raw (un-normalized) SNPs from a plink input object into an
-    (n_samples, n_snps) float64 array, ready to pass to calculateKinship.
-    """
-    plink_data.normGenotype = False
-    plink_data.getSNPIterator()
-    if num_snps is not None:
-        plink_data.numSNPs = num_snps
-
-    n = len(plink_data.indivs)
-    W = np.empty((n, plink_data.numSNPs), dtype=np.float64)
-    j = 0
-    for snp, _ in plink_data:
-        W[:, j] = snp
-        j += 1
-    return W[:, :j]
 
 
 def main():
@@ -89,7 +71,7 @@ def main():
     num_snps = options.numSNPs if options.emmaFile else None
     logger.info("Loading SNPs...")
     t0 = time.perf_counter()
-    W = _load_snp_matrix(plink_data, num_snps=num_snps)
+    W = load_snp_matrix(plink_data, num_snps=num_snps)
     logger.info("Loaded %d SNPs x %d individuals in %.3fs",
                 W.shape[1], W.shape[0], time.perf_counter() - t0)
 

@@ -144,6 +144,7 @@ def runGWAS(
     beta_sds = []
     f_stats  = []
     p_values = []
+    n_skipped = 0
 
     buf_snps = []   # (n,) genotype vectors queued for the next batch
     buf_ids  = []
@@ -218,6 +219,7 @@ def runGWAS(
                     snp_ids.append(snp_id)
                     betas.append(np.nan); beta_sds.append(np.nan)
                     f_stats.append(np.nan); p_values.append(np.nan)
+                    n_skipped += 1
                     continue
                 if not normalizeGenotype:
                     xs = (xs - xs.mean()) / np.sqrt(xs.var())
@@ -235,6 +237,7 @@ def runGWAS(
                     snp_ids.append(snp_id)
                     betas.append(np.nan); beta_sds.append(np.nan)
                     f_stats.append(np.nan); p_values.append(np.nan)
+                    n_skipped += 1
                     continue
                 if refit:
                     L.fit(X=x.reshape(-1, 1), REML=REML)
@@ -257,6 +260,7 @@ def runGWAS(
             snp_ids.append(snp_id)
             betas.append(np.nan); beta_sds.append(np.nan)
             f_stats.append(np.nan); p_values.append(np.nan)
+            n_skipped += 1
             continue
 
         buf_snps.append(x)
@@ -266,7 +270,11 @@ def runGWAS(
 
     flush_batch()  # remaining partial batch
 
-    logger.info("Scanned %d SNPs in %.3fs", len(snp_ids), time.perf_counter() - t_scan)
+    total = len(snp_ids)
+    logger.info(
+        "Scanned %d SNPs in %.3fs — skipped %d (%.1f%%) due to missing genotypes or low variance",
+        total, time.perf_counter() - t_scan, n_skipped, 100.0 * n_skipped / total if total else 0.0,
+    )
 
     result = np.empty(len(snp_ids), dtype=_GWAS_DTYPE)
     result["SNP_ID"]  = snp_ids

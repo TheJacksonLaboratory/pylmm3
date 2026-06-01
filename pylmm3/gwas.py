@@ -116,11 +116,12 @@ def runGWAS(
     else:
         logger.info("LMM ready (%.3fs) — variance components will be refit per SNP", time.perf_counter() - t0)
 
-    snp_ids = []
+    snp_ids  = []
     betas    = []
     beta_sds = []
     f_stats  = []
     p_values = []
+    n_skipped = 0
 
     t_scan = time.perf_counter()
     for count, (snp, snp_id) in enumerate(snp_iter, 1):
@@ -140,6 +141,7 @@ def runGWAS(
                 beta_sds.append(np.nan)
                 f_stats.append(np.nan)
                 p_values.append(np.nan)
+                n_skipped += 1
                 continue
 
             if not normalizeGenotype:
@@ -161,6 +163,7 @@ def runGWAS(
                 beta_sds.append(np.nan)
                 f_stats.append(np.nan)
                 p_values.append(np.nan)
+                n_skipped += 1
                 continue
 
             if refit:
@@ -173,7 +176,11 @@ def runGWAS(
         f_stats.append(float(ts))
         p_values.append(float(ps))
 
-    logger.info("Scanned %d SNPs in %.3fs", len(snp_ids), time.perf_counter() - t_scan)
+    total = len(snp_ids)
+    logger.info(
+        "Scanned %d SNPs in %.3fs — skipped %d (%.1f%%) due to missing genotypes or low variance",
+        total, time.perf_counter() - t_scan, n_skipped, 100.0 * n_skipped / total if total else 0.0,
+    )
 
     result = np.empty(len(snp_ids), dtype=_GWAS_DTYPE)
     result["SNP_ID"]  = snp_ids
