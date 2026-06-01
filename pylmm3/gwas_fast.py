@@ -4,8 +4,7 @@ Instead of calling Kve.T @ x per SNP (gemv), B SNPs are batched into a matrix G
 and Kve.T @ G is computed once (dgemm). The per-SNP information matrix is then
 decomposed via the Schur complement of the fixed covariate block A, which is
 constant across SNPs at fixed h=optH and inverted only once. The batch formulas
-are algebraically identical to the per-SNP loop in gwas.py; see
-docs/gwas_fast_design.md for the full derivation and validation results.
+are algebraically identical to the per-SNP loop in gwas.py.
 """
 
 import logging
