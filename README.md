@@ -341,32 +341,28 @@ uv run pylmmGWAS [options] --kfile <kin> --[bfile | tfile | emmaSNP] <base> <out
 
 ## Logging
 
-pylmm3 uses Python's standard `logging` module throughout. All loggers are named
-`pylmm3.<module>` (e.g. `pylmm3.gwas_fast`, `pylmm3.lmm`) and propagate to the
-root logger — pylmm3 never installs its own handler in library code.
+pylmm3 follows the standard Python library logging contract: it attaches a
+`NullHandler` to the `pylmm3` logger at import time and never calls
+`basicConfig()` or installs a handler of its own. All loggers are named
+`pylmm3.<module>` (e.g. `pylmm3.gwas_fast`, `pylmm3.lmm`) and propagate to
+the root logger. The calling application installs the handler and decides how
+loud each component should be.
 
 ### Log levels
 
 | Level | Default? | What you see |
 |-------|----------|--------------|
 | `ERROR` | always | Unrecoverable failures — bad BED magic, unknown file type |
-| `WARNING` | always | Dropped individuals, missing kinship entries, multiple optima found during heritability optimization |
-| `INFO` | off | Pipeline milestones and timing — SNP load, kinship compute, null fit, total elapsed |
-| `DEBUG` | off | Internal detail — BED bytes per SNP, eigendecomposition timing, per-SNP scan progress ticks |
+| `WARNING` | always | Dropped individuals, missing kinship entries, multiple optima during heritability optimization |
+| `INFO` | off | Per-step timings — SNP load, LMM construction, null fit (h + σ²), scan throughput, total elapsed |
+| `DEBUG` | off | Internal detail — eigendecomposition breakdown, BED bytes per SNP, per-10k-SNP throughput ticks |
 
-The default level is **WARNING** (nearly silent). Production runs produce output only
-when something is wrong.
+The default level is **WARNING** (nearly silent). A production run emits output
+only when something is wrong.
 
-### Controlling the level
+### Running the pylmm3 CLIs directly
 
-**Via environment variable** — set before the process starts; no code changes needed:
-
-```bash
-PYLMM3_LOG_LEVEL=INFO  uv run pylmmGWAS --bfile study --kfile study.kin results.tsv
-PYLMM3_LOG_LEVEL=DEBUG uv run pylmmGWAS --bfile study --kfile study.kin results.tsv
-```
-
-**Via CLI flag** — overrides the env var for that invocation:
+**Via CLI flag:**
 
 ```bash
 uv run pylmmGWAS --log-level INFO  ... results.tsv   # milestones + timing
@@ -374,57 +370,80 @@ uv run pylmmGWAS --log-level DEBUG ... results.tsv   # full internal trace
 uv run pylmmGWAS --verbose         ... results.tsv   # shorthand for INFO
 ```
 
-**Priority:** `--log-level` flag > `PYLMM3_LOG_LEVEL` env var > `WARNING` default.
+**Via environment variable** — useful for one-off debugging without changing
+the command line:
 
-### Log format
-
-```
-[INFO   ] 2026-05-31 14:23:01.234  pylmm3.gwas_fast  Null fit: h=0.412  sigma=1.834  (2.341s)
-[WARNING] 2026-05-31 14:23:01.235  pylmm3.lmm        Found 2 optima for h — returning first (h=0.4119)
-[DEBUG  ] 2026-05-31 14:23:01.236  pylmm3.input      BED bytes per SNP: 83
+```bash
+PYLMM3_LOG_LEVEL=DEBUG uv run pylmmGWAS --bfile study --kfile study.kin results.tsv
 ```
 
-All output goes to **stderr**. The `[LEVEL  ]` field is always 9 characters wide so
-columns align across log lines.
+**Priority when running the CLI:** `--log-level` flag > `PYLMM3_LOG_LEVEL` env var > `WARNING` default.
 
-### Using pylmm3 as a library
+### Running pylmm3 through an orchestrator (e.g. plinkformatter)
 
-pylmm3 follows the standard library logging contract: it never calls
-`logging.basicConfig()` or installs handlers. The calling application (your script,
-a Temporal worker, etc.) is responsible for configuring the root handler. pylmm3
-loggers propagate up normally.
+When plinkformatter calls pylmm3 in-process, plinkformatter's `configure()`
+owns the root handler and controls both packages. `PYLMM3_LOG_LEVEL` provides
+independent per-package control:
 
-When `PYLMM3_LOG_LEVEL` is set and no root handler exists yet, `configure()` in
-`pylmm3.log` installs a minimal fallback handler so logs are not silently swallowed
-in un-configured environments. This fallback is a no-op if a handler is already
-present.
+| Command | plinkformatter | pylmm3 |
+|---|---|---|
+| default | WARNING (silent) | WARNING (silent) |
+| `--verbose` | INFO | INFO — timings visible |
+| `--log-level DEBUG` | DEBUG | DEBUG |
+| `PYLMM3_LOG_LEVEL=DEBUG ./run.sh` | WARNING | **DEBUG** — pylmm3 only |
+| `PYLMM3_LOG_LEVEL=WARNING --log-level DEBUG` | DEBUG | **WARNING** — plinkformatter only |
+
+### Using pylmm3 as a library in your own code
+
+pylmm3 is silent by default (NullHandler). Configure your application's root
+handler once at startup and pylmm3 loggers flow through it automatically.
+Call `pylmm3.log.configure()` to set pylmm3's verbosity independently:
 
 ```python
-# Your application configures logging once at startup — pylmm3 just propagates
 import logging
+from pylmm3.log import configure as configure_pylmm3
+
+# Your application installs the handler once
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
 
-from pylmm3 import runGWAS   # pylmm3 loggers now flow through your handler
+# Set pylmm3 to a different level if you want more or less detail
+configure_pylmm3(logging.DEBUG)   # or logging.WARNING to silence it
+
+from pylmm3 import runGWAS        # pylmm3 logs now flow through your handler
 ```
+
+### What INFO timing looks like
+
+At `--verbose` (INFO) a typical GWAS run emits:
+
+```
+[INFO   ] 2026-06-01 09:12:04.123  pylmm3.gwas_fast  Read input for 1223 individuals in 0.041s
+[INFO   ] 2026-06-01 09:12:06.441  pylmm3.gwas_fast  Read 231164x1223 kinship in 2.318s
+[INFO   ] 2026-06-01 09:12:06.892  pylmm3.gwas_fast  LMM ready in 0.451s (eigendecomposition included unless precomputed)
+[INFO   ] 2026-06-01 09:12:07.204  pylmm3.gwas_fast  Null fit: h=0.412  sigma=1.834  (0.312s)
+[INFO   ] 2026-06-01 09:12:14.817  pylmm3.gwas_fast  Scanned 231164 SNPs in 7.613s — skipped 159 (0.1%) due to missing genotypes or low variance
+[INFO   ] 2026-06-01 09:12:14.819  pylmm3.gwas_fast  Total: 9.003s
+```
+
+All output goes to **stderr**. The `[LEVEL  ]` field is always 9 characters wide
+so columns align across log lines.
 
 ### Why `%s`-style formatting in logger calls
 
 All logger calls in pylmm3 use `%`-style arguments, not f-strings:
 
 ```python
-# Correct — lazy: string is never formatted if DEBUG is disabled
+# Correct — lazy: the string is never formatted if the level is disabled
 logger.debug("BED bytes per SNP: %d", self.BytestoRead)
 
-# Wrong — eager: f-string is always evaluated, even when DEBUG is off
+# Wrong — eager: the f-string is evaluated at the call site regardless of level
 logger.debug(f"BED bytes per SNP: {self.BytestoRead}")
 ```
 
-Python's `logging` module defers the `%` substitution to `Formatter.format()`, which
-is only called when a handler is actually going to emit the record. With f-strings the
-interpolation happens at the call site before the level check — wasted work on every
-disabled log call. In a tight loop over 250,000 SNPs, even trivial per-call overhead
-adds up. The `%s` pattern is also the style recommended in the Python logging docs and
-enforced by `pylint W1203`.
+Python's `logging` module defers `%` substitution to `Formatter.format()`,
+which is only called when a handler will actually emit the record. With
+f-strings the interpolation happens before the level check — wasted work on
+every suppressed call. In a tight loop over 250,000 SNPs this adds up.
 
 ---
 

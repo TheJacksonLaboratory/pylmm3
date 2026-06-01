@@ -1,28 +1,33 @@
 """Logging configuration for pylmm3.
 
-Library callers should configure their own root handler; pylmm3 modules only 
-call logging.getLogger(__name__) and never touch handlers.
+pylmm3 is a library.  It never installs handlers or calls basicConfig — that
+is the application's job (pylmmGWAS, pylmmKinship, or any orchestrator such as
+plinkformatter that calls pylmm3 in-process).
 
-configure() is called by the CLI entry points (pylmmGWAS, pylmmKinship).  It:
-  - sets the "pylmm3" package logger to the requested level (so all pylmm3.*
-    loggers inherit it),
-  - installs a fallback StreamHandler on the root logger only when no handler
-    exists yet (i.e. the library was not imported into an already-configured
-    logging environment).
+At import time a NullHandler is attached to the "pylmm3" logger so that if no
+application configures logging, pylmm3 is completely silent (the stdlib-
+recommended pattern for libraries; see Python docs "Logging HOWTO").
 
-Level precedence (highest wins):
-  1. CLI flag  --log-level / --verbose
-  2. Env var   PYLMM3_LOG_LEVEL=DEBUG|INFO|WARNING|ERROR
-  3. Default   WARNING
+configure() is provided for application entry points.  It sets the level on
+the "pylmm3" logger (and therefore all pylmm3.* children) — nothing more.
+Handler installation and formatting are the caller's responsibility.
+
+Level precedence when called without an explicit argument:
+  1. PYLMM3_LOG_LEVEL env var  (DEBUG | INFO | WARNING | ERROR)
+  2. WARNING  (default — silent)
 """
 
 import logging
 import os
 import sys
 
+_ENV_VAR = "PYLMM3_LOG_LEVEL"
 _FORMAT  = "[%(levelname)-7s] %(asctime)s.%(msecs)03d  %(name)s  %(message)s"
 _DATEFMT = "%Y-%m-%d %H:%M:%S"
-_ENV_VAR = "PYLMM3_LOG_LEVEL"
+
+# Standard library pattern: attach NullHandler so pylmm3 is silent unless the
+# application configures a real handler.
+logging.getLogger("pylmm3").addHandler(logging.NullHandler())
 
 
 def env_level() -> int:
@@ -32,15 +37,33 @@ def env_level() -> int:
 
 
 def configure(level: int | None = None) -> None:
-    """Configure pylmm3 package logging.
+    """Set the verbosity of all pylmm3.* loggers.
+
+    Does NOT install a handler — call this when an application (e.g.
+    plinkformatter) already owns the root handler and just needs to control
+    how loud pylmm3 is.
 
     Args:
         level: explicit level (e.g. logging.DEBUG).  If None, reads
-               PYLMM3_LOG_LEVEL env var; falls back to WARNING.
+               PYLMM3_LOG_LEVEL; falls back to WARNING.
     """
     effective = level if level is not None else env_level()
     logging.getLogger("pylmm3").setLevel(effective)
+
+
+def setup(level: int | None = None) -> None:
+    """Install a root handler (if none exists) then set the pylmm3 log level.
+
+    For use by pylmm3's own CLI entry points (pylmmGWAS, pylmmKinship) that
+    are the application.  Orchestrators that already own a root handler (e.g.
+    plinkformatter) should call configure() instead.
+
+    Args:
+        level: explicit level.  If None, reads PYLMM3_LOG_LEVEL; falls back
+               to WARNING.
+    """
     if not logging.root.handlers:
         handler = logging.StreamHandler(sys.stderr)
         handler.setFormatter(logging.Formatter(_FORMAT, datefmt=_DATEFMT))
         logging.root.addHandler(handler)
+    configure(level)

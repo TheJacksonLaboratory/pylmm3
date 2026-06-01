@@ -115,11 +115,14 @@ def runGWAS(
 
     t0 = time.perf_counter()
     L = LMM(Y, K, Kva, Kve, X0)
+    logger.info("LMM ready in %.3fs (eigendecomposition included unless precomputed)",
+                time.perf_counter() - t0)
 
     if not refit:
+        t_fit = time.perf_counter()
         L.fit(REML=True)
         logger.info("Null fit: h=%.3f  sigma=%.3f  (%.3fs)",
-                    L.optH, L.optSigma, time.perf_counter() - t0)
+                    L.optH, L.optSigma, time.perf_counter() - t_fit)
 
         # All quantities below are fixed at h = optH and reused every batch.
         # Full derivation in docs/gwas_fast_design.md §3.
@@ -136,8 +139,7 @@ def runGWAS(
         A_inv_c0 = A_inv @ c0                        # (q,)
         dof      = n - (L.q + 1)
     else:
-        logger.info("LMM ready (%.3fs) — variance components will be refit per SNP",
-                    time.perf_counter() - t0)
+        logger.info("Variance components will be refit per SNP (no null fit)")
 
     snp_ids  = []
     betas    = []

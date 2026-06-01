@@ -10,7 +10,7 @@ import time
 import numpy as np
 
 from pylmm3 import input
-from pylmm3.log import configure as configure_logging
+from pylmm3.log import setup as configure_logging
 from pylmm3.gwas_fast import runGWAS as runGWAS_fast
 from pylmm3.gwas import runGWAS as runGWAS_original
 
@@ -119,6 +119,7 @@ def main():
 
     # Read PLINK input
     logger.info("Reading SNP input...")
+    t0 = time.perf_counter()
     if options.bfile:
         plink_data = input.plink(
             options.bfile, type='b',
@@ -136,6 +137,7 @@ def main():
             normGenotype=options.normalizeGenotype)
     else:
         parser.error("You must provide at least one PLINK input file base")
+    logger.info("Read input for %d individuals in %.3fs", len(plink_data.indivs), time.perf_counter() - t0)
 
     if not os.path.isfile(
         options.phenoFile or plink_data.fbase + '.phenos') and not os.path.isfile(
@@ -190,8 +192,10 @@ def main():
     Kva, Kve = None, None
     if options.eigenfile:
         logger.info("Loading pre-computed eigendecomposition...")
+        t0 = time.perf_counter()
         Kva = np.loadtxt(options.eigenfile + ".kva")
         Kve = np.loadtxt(options.eigenfile + ".kve")
+        logger.info("Loaded eigendecomposition in %.3fs", time.perf_counter() - t0)
 
     # Phenotype vector — NaN removal is handled inside run_gwas
     Y = plink_data.phenos[:, options.pheno]

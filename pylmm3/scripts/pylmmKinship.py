@@ -9,7 +9,7 @@ from argparse import ArgumentParser
 from scipy.linalg import eigh
 
 from pylmm3 import input
-from pylmm3.log import configure as configure_logging
+from pylmm3.log import setup as configure_logging
 from pylmm3.input import load_snp_matrix
 from pylmm3.kinship import calculateKinship
 

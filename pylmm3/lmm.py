@@ -114,9 +114,9 @@ class LMM:
 
         if Kva is None or len(Kva) == 0 or Kve is None or len(Kve) == 0:
             logger.debug("Computing eigendecomposition for %dx%d kinship matrix", K.shape[0], K.shape[1])
-            begin = time.time()
+            begin = time.perf_counter()
             Kva, Kve = linalg.eigh(K)
-            logger.debug("Eigendecomposition done in %.3fs", time.time() - begin)
+            logger.debug("Eigendecomposition done in %.3fs", time.perf_counter() - begin)
 
         self.K = K
         self.Kva = Kva
