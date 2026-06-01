@@ -21,16 +21,16 @@ Provides the `plink` class, which is an iterator that streams one SNP at a time
 from a PLINK dataset. Each iteration yields a `(genotype_array, snp_id)` pair.
 Optionally reads a kinship matrix and phenotype file from companion files.
 
-Known issues (see docs/CURRENT_ISSUES.md):
-    - CR-A: Dead branch in `normalizeGenotype` (`if s == 0` is unreachable).
-    - CR-B: `except BaseException` in `__next__` should be `except Exception`.
-    - File handles are stored as instance variables and closed in `__del__`,
-      which is fragile. Prefer using the iterator in a `for` loop that exhausts
-      it, or wrap the caller in a `with` block when possible.
+Iteration is driven by a generator returned from `__iter__`: genotype file
+handles live in the generator frame under a `with` block, so they close
+deterministically when iteration finishes, breaks, or raises. Re-iterating or
+nesting iteration over the same `plink` object is safe — each pass gets its own
+handles and never leaks descriptors.
 """
 
 import logging
 import os
+from collections.abc import Iterator
 
 import numpy as np
 
@@ -60,8 +60,8 @@ class plink:
         K: Kinship matrix as a numpy array, or `None` if not loaded.
         phenos: Phenotype matrix of shape `(N, num_traits)`, or `None`.
         normGenotype: Whether to normalize each SNP to mean 0 / variance 1.
-        numSNPs: Total number of SNPs in the dataset (set by `getSNPIterator`).
-        have_read: Running count of SNPs yielded so far.
+        numSNPs: Total number of SNPs in the dataset, or -1 for EMMA (which
+            has no index); set by `getSNPIterator`.
     """
 
     def __init__(
@@ -111,8 +111,6 @@ class plink:
 
         self.fbase = fbase
         self.type = type
-        self.fhandle = None
-        self.snpFileHandle = None
         if not type == 'emma':
             self.indivs = self.getIndivs(self.fbase, type)
         else:
@@ -143,178 +141,116 @@ class plink:
 
         self.getPhenos(self.phenoFile)
 
-    def __del__(self) -> None:
-        """Close open file handles when the object is garbage-collected."""
-        if self.fhandle:
-            self.fhandle.close()
-        if self.snpFileHandle:
-            self.snpFileHandle.close()
+    def getSNPIterator(self) -> "Iterator[tuple[np.ndarray, str]]":
+        """Set `self.numSNPs` and return a fresh SNP iterator.
 
-    def getSNPIterator(self) -> "plink":
-        """Open the genotype file and return self as a ready iterator.
-
-        Dispatches to the format-specific initializer based on `self.type`.
-        After this call, `self.numSNPs` and `self.have_read` are set and
-        iteration can begin via `next()` or a `for` loop.
+        Retained for callers (e.g. `load_snp_matrix`) that read `self.numSNPs`
+        after calling this. Iteration itself is driven by a generator returned
+        from `__iter__`, so file handles are scoped to the generator frame and
+        closed deterministically rather than living on the instance.
 
         Returns:
-            `self`, ready for iteration.
+            A fresh iterator over `(genotype_array, snp_id)` pairs.
         """
-        if self.type == 'b':
-            return self.getSNPIterator_bed()
-        elif self.type == 't':
-            return self.getSNPIterator_tped()
-        elif self.type == 'emma':
-            return self.getSNPIterator_emma()
-        else:
-            logger.error("Unknown SNP iterator type %r — expected 'b', 't', or 'emma'", self.type)
-            return
+        self.numSNPs = self._count_snps()
+        return iter(self)
 
-    def getSNPIterator_emma(self) -> "plink":
-        """Open the EMMA-format SNP file and initialize iteration state.
+    def _count_snps(self) -> int:
+        """Count SNPs without opening the genotype stream.
+
+        Reads the line count of the `.bim` index (falling back to `.map` for
+        TPED). EMMA files have no index, so -1 is returned and iteration stops
+        at end-of-file instead.
 
         Returns:
-            `self`, ready for iteration. `self.numSNPs` is set to -1 because
-            EMMA files have no header with a SNP count; iteration stops when
-            `readline()` returns an empty string.
+            Number of SNPs, or -1 for EMMA format.
         """
-        self.have_read = 0
-        self.numSNPs = -1
-        file = self.fbase
-        self.fhandle = open(file, 'r')
+        if self.type == 'emma':
+            return -1
+        index = self.fbase + '.bim'
+        if self.type == 't' and not os.path.isfile(index):
+            index = self.fbase + '.map'
+        with open(index, 'r') as f:
+            return sum(1 for _ in f)
 
-        return self
+    def _iter_emma(self) -> "Iterator[tuple[np.ndarray, str]]":
+        """Yield `(genotype_array, snp_id)` pairs from an EMMA-format file.
 
-    def getSNPIterator_tped(self) -> "plink":
-        """Open the TPED and BIM/MAP files and initialize iteration state.
-
-        Counts SNPs by reading the `.bim` file (falling back to `.map` if
-        `.bim` is absent), opens the `.tped` file for streaming, and resets
-        the `have_read` counter.
-
-        Returns:
-            `self`, ready for iteration.
+        Each line is one SNP of space-separated dosage values; non-numeric
+        tokens become `np.nan`. SNP ids are synthesized as `SNP_<n>` (1-based)
+        since EMMA files carry no rs identifiers. The handle is scoped to this
+        generator and closed on exhaustion, `break`, or exception.
         """
-        # get the number of snps
-        file = self.fbase + '.bim'
-        if not os.path.isfile(file):
-            file = self.fbase + '.map'
-        i = 0
-        f = open(file, 'r')
-        for line in f:
-            i += 1
-        f.close()
-        self.numSNPs = i
-        self.have_read = 0
-        self.snpFileHandle = open(file, 'r')
+        with open(self.fbase, 'r') as fhandle:
+            for i, line in enumerate(fhandle, 1):
+                G = []
+                for x in line.strip().split():
+                    try:
+                        G.append(float(x))
+                    except ValueError:
+                        G.append(np.nan)
+                G = np.array(G)
+                if self.normGenotype:
+                    G = self.normalizeGenotype(G)
+                yield G, "SNP_%d" % i
 
-        file = self.fbase + '.tped'
-        self.fhandle = open(file, 'r')
+    def _iter_tped(self) -> "Iterator[tuple[np.ndarray, str]]":
+        """Yield `(genotype_array, snp_id)` pairs from a TPED fileset.
 
-        return self
+        Genotypes are decoded from `.tped` (stripping the four leading header
+        fields); SNP ids are taken from column 2 of the `.bim` index (falling
+        back to `.map`). Both handles are scoped to this generator. Iteration
+        stops when either file is exhausted.
+        """
+        index = self.fbase + '.bim'
+        if not os.path.isfile(index):
+            index = self.fbase + '.map'
+        with open(index, 'r') as idx, open(self.fbase + '.tped', 'r') as tped:
+            for idx_line, geno_line in zip(idx, tped):
+                G = self.getGenos_tped(geno_line.strip().split()[4:])
+                if self.normGenotype:
+                    G = self.normalizeGenotype(G)
+                yield G, idx_line.strip().split()[1]
 
-    def getSNPIterator_bed(self) -> "plink":
-        """Open the BED and BIM files, validate the magic bytes, and initialize iteration.
+    def _iter_bed(self) -> "Iterator[tuple[np.ndarray, str]]":
+        """Yield `(genotype_array, snp_id)` pairs from a BED fileset.
 
-        Counts SNPs by reading the `.bim` file, opens the `.bed` file in
-        binary mode, validates the two-byte PLINK magic number (`0x6c 0x1b`)
-        and the SNP-major mode byte (`0x01`), then positions the file cursor
-        at the first SNP record.
-
-        Returns:
-            `self`, ready for iteration.
+        Validates the two-byte PLINK magic number (`0x6c 0x1b`) and the
+        SNP-major mode byte (`0x01`), then reads one packed record per `.bim`
+        line, pairing it with the rs id in column 2 of that line. Both handles
+        are scoped to this generator.
 
         Raises:
-            StopIteration: If the magic number is invalid or the file is not
-                in SNP-major mode.
+            ValueError: If the magic number is invalid or the file is not in
+                SNP-major mode.
         """
-        # get the number of snps
-        file = self.fbase + '.bim'
-        i = 0
-        f = open(file, 'r')
-        for line in f:
-            i += 1
-        f.close()
-        self.numSNPs = i
-        self.have_read = 0
-        self.snpFileHandle = open(file, 'r')
+        bytes_per_snp = self.N // 4 + (self.N % 4 and 1 or 0)
+        logger.debug("BED bytes per SNP: %d", bytes_per_snp)
+        with open(self.fbase + '.bim', 'r') as bim, open(self.fbase + '.bed', 'rb') as bed:
+            if bed.read(2) != b'\x6c\x1b':
+                raise ValueError(f"Invalid PLINK BED magic number in {self.fbase}.bed")
+            if bed.read(1) != b'\x01':
+                raise ValueError(f"BED file is not in SNP-major mode: {self.fbase}.bed")
+            for line in bim:
+                raw = bed.read(bytes_per_snp)
+                G = self.formatBinaryGenotypes(raw, self.normGenotype)
+                yield G, line.strip().split()[1]
 
-        self.BytestoRead = self.N // 4 + (self.N % 4 and 1 or 0)
-        logger.debug("BED bytes per SNP: %d", self.BytestoRead)
-        self._formatStr = 'c' * self.BytestoRead
+    def __iter__(self) -> "Iterator[tuple[np.ndarray, str]]":
+        """Return a fresh generator over `(genotype_array, snp_id)` pairs.
 
-        file = self.fbase + '.bed'
-        self.fhandle = open(file, 'rb')
-
-        magicNumber = self.fhandle.read(2)
-        order = self.fhandle.read(1)
-        if magicNumber != b'\x6c\x1b':
-            logger.error("Invalid PLINK BED magic number in %s.bed", self.fbase)
-            raise StopIteration
-        if order != b'\x01':
-            logger.error("BED file is not in SNP-major mode: %s.bed", self.fbase)
-            raise StopIteration
-
-        return self
-
-    def __iter__(self) -> "plink":
-        """Return self as the iterator (calls `getSNPIterator` to open files)."""
-        return self.getSNPIterator()
-
-    def __next__(self) -> tuple[np.ndarray, str]:
-        """Yield the next SNP as a `(genotype_array, snp_id)` pair.
-
-        Dispatches to the format-specific read logic for BED, TPED, or EMMA.
-        For EMMA format, non-numeric tokens are silently converted to `np.nan`
-        (known issue CR-B: the `except BaseException` should be `except Exception`).
-
-        Returns:
-            A 2-tuple `(G, snp_id)` where `G` is a float64 array of length N
-            with values in {0.0, 0.5, 1.0, np.nan}, and `snp_id` is the RS
-            identifier string from the `.bim` / `.map` file, or `'SNP_<n>'`
-            for EMMA format.
-
-        Raises:
-            StopIteration: When all SNPs have been yielded.
+        Each call opens its own genotype file handles inside the generator
+        frame, so re-iterating or nesting iteration over the same `plink`
+        object is safe and never leaks descriptors.
         """
-        if self.have_read == self.numSNPs:
-            raise StopIteration
-        self.have_read += 1
-        
         if self.type == 'b':
-            X = self.fhandle.read(self.BytestoRead)
-            # use the new formatBinaryGenotypes function that uses numpy for decoding
-            res = self.formatBinaryGenotypes(X, self.normGenotype), self.snpFileHandle.readline().strip().split()[1]
-            return res
-        
+            return self._iter_bed()
         elif self.type == 't':
-            X = self.fhandle.readline()
-            XX = X.strip().split()
-            chrm, rsid, pos1, pos2 = tuple(XX[:4])
-            XX = XX[4:]
-            G = self.getGenos_tped(XX)
-            if self.normGenotype:
-                G = self.normalizeGenotype(G)
-            return G, self.snpFileHandle.readline().strip().split()[1]
-
+            return self._iter_tped()
         elif self.type == 'emma':
-            X = self.fhandle.readline()
-            if X == '':
-                raise StopIteration
-            XX = X.strip().split()
-            G = []
-            for x in XX:
-                try:
-                    G.append(float(x))
-                except ValueError:
-                    G.append(np.nan)
-            G = np.array(G)
-            if self.normGenotype:
-                G = self.normalizeGenotype(G)
-            return G, "SNP_%d" % self.have_read
-
-        else:
-            logger.error("Unknown SNP type %r in __next__", self.type)
+            return self._iter_emma()
+        logger.error("Unknown SNP type %r — expected 'b', 't', or 'emma'", self.type)
+        return iter(())
 
     def getGenos_tped(
         self,
@@ -695,6 +631,10 @@ def load_snp_matrix(plink_data: "plink", num_snps: int | None = None) -> np.ndar
     W = np.empty((n, plink_data.numSNPs), dtype=np.float64)
     j = 0
     for snp, _ in plink_data:
+        # For EMMA, numSNPs is a caller-supplied count; stop once the
+        # pre-allocated columns are full rather than overrunning W.
+        if j >= plink_data.numSNPs:
+            break
         W[:, j] = snp
         j += 1
     return W[:, :j]

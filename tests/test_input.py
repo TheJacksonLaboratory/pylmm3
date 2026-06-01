@@ -111,6 +111,33 @@ def test_load_snp_matrix_shape(emma_file):
     assert p.normGenotype is False  # set in place by the loader
 
 
+def test_reiteration_does_not_leak_handles(emma_file):
+    """Iterating the same plink object twice yields the same data each time.
+
+    Regression for the descriptor leak: the old self-iterator opened a new
+    handle on each __iter__ and orphaned the previous one. The generator-based
+    __iter__ scopes handles to each pass, so a second iteration restarts
+    cleanly and closes its handle on exhaustion.
+    """
+    p = plink(emma_file, type="emma", normGenotype=False)
+    first = [(g.tolist(), sid) for g, sid in p]
+    second = [(g.tolist(), sid) for g, sid in p]
+    assert len(first) == 3
+    assert [sid for _, sid in first] == [sid for _, sid in second]
+
+
+def test_nested_iteration_is_independent(emma_file):
+    """Nested iteration over one plink object does not corrupt shared state.
+
+    The old self-iterator shared self.fhandle / self.have_read, so an inner
+    loop exhausted the outer one. Independent generators make the full
+    Cartesian product observable.
+    """
+    p = plink(emma_file, type="emma", normGenotype=False)
+    pairs = [(a_id, b_id) for _, a_id in p for _, b_id in p]
+    assert len(pairs) == 3 * 3
+
+
 def test_getphenos_na_to_nan(tmp_path, tped_fileset):
     """Phenotype values 'NA' and '-9' are converted to NaN."""
     pheno = tmp_path / "study.phenos"

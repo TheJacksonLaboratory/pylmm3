@@ -58,13 +58,11 @@ def snp_iter_factory(genotypes):
 def bare_plink():
     """A `plink` instance with no open files, for testing pure helper methods.
 
-    Built via `__new__` to skip file I/O in __init__; fhandle/snpFileHandle
-    are set to None so `__del__` does not raise during garbage collection.
+    Built via `__new__` to skip file I/O in __init__; the pure decoding
+    helpers (normalizeGenotype, getGenos_tped, formatBinaryGenotypes) only
+    read `self.N`, which tests set as needed.
     """
-    p = pin.plink.__new__(pin.plink)
-    p.fhandle = None
-    p.snpFileHandle = None
-    return p
+    return pin.plink.__new__(pin.plink)
 
 
 @pytest.fixture
