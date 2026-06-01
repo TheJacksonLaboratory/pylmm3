@@ -201,9 +201,9 @@ def runGWAS(
 
     t_scan = time.perf_counter()
     for count, (snp, snp_id) in enumerate(snp_iter, 1):
-        if count % 1000 == 0:
+        if count % 10000 == 0:
             elapsed = time.perf_counter() - t_scan
-            logger.info("At SNP %d  (%.0f SNPs/s)", count, count / elapsed)
+            logger.debug("At SNP %d  (%.0f SNPs/s)", count, count / elapsed)
 
         x = np.asarray(snp, dtype=np.float64)[keep]
         v = np.isnan(x)

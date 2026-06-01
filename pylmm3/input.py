@@ -31,7 +31,6 @@ Known issues (see docs/CURRENT_ISSUES.md):
 
 import logging
 import os
-import sys
 
 import numpy as np
 
@@ -168,7 +167,7 @@ class plink:
         elif self.type == 'emma':
             return self.getSNPIterator_emma()
         else:
-            sys.stderr.write("Please set type to either b or t\n")
+            logger.error("Unknown SNP iterator type %r — expected 'b', 't', or 'emma'", self.type)
             return
 
     def getSNPIterator_emma(self) -> "plink":
@@ -241,7 +240,7 @@ class plink:
         self.snpFileHandle = open(file, 'r')
 
         self.BytestoRead = self.N // 4 + (self.N % 4 and 1 or 0)
-        logger.debug(f"[PLINK] Bytes to read: {self.BytestoRead}")
+        logger.debug("BED bytes per SNP: %d", self.BytestoRead)
         self._formatStr = 'c' * self.BytestoRead
 
         file = self.fbase + '.bed'
@@ -250,10 +249,10 @@ class plink:
         magicNumber = self.fhandle.read(2)
         order = self.fhandle.read(1)
         if magicNumber != b'\x6c\x1b':
-            sys.stderr.write("Invalid PLINK BED magic number\n")
+            logger.error("Invalid PLINK BED magic number in %s.bed", self.fbase)
             raise StopIteration
         if order != b'\x01':
-            sys.stderr.write("BED file is not in SNP-major mode\n")
+            logger.error("BED file is not in SNP-major mode: %s.bed", self.fbase)
             raise StopIteration
 
         return self
@@ -315,7 +314,7 @@ class plink:
             return G, "SNP_%d" % self.have_read
 
         else:
-            sys.stderr.write("Do not understand type %s\n" % (self.type))
+            logger.error("Unknown SNP type %r in __next__", self.type)
 
     def getGenos_tped(
         self,
@@ -545,7 +544,7 @@ class plink:
         f.close()
 
         self.N = len(keys)
-        sys.stderr.write("Read %d individuals from %s\n" % (self.N, famFile))
+        logger.debug("Read %d individuals from %s", self.N, famFile)
 
         return keys
 
@@ -574,11 +573,10 @@ class plink:
             `self.indivs` is empty.
         """
         if self.indivs is None or len(self.indivs) == 0:
-            sys.stderr.write(
-                "Did not read any individuals so can't load kinship\n")
+            logger.warning("No individuals loaded — cannot read kinship from %s", kFile)
             return
 
-        sys.stderr.write("Reading kinship matrix from %s\n" % (kFile))
+        logger.debug("Reading kinship matrix from %s", kFile)
 
         f = open(kFile, 'r')
         # read indivs
@@ -618,11 +616,8 @@ class plink:
             K = K[np.ix_(L, L)]
             self.indivs = KK
             self.indivs_removed = X
-            if len(self.indivs_removed):
-                sys.stderr.write(
-                    "Removed %d individuals that did not appear in Kinship\n" %
-                    (len(
-                        self.indivs_removed)))
+            if self.indivs_removed:
+                logger.warning("Removed %d individuals not found in kinship file", len(self.indivs_removed))
 
         return K
 
@@ -656,10 +651,10 @@ class plink:
 
     def getCovariates(self, covFile=None):
         if not covFile:
-            sys.stderr.write("No covariate file provided\n")
+            logger.debug("No covariate file provided")
             return
         if not os.path.isfile(covFile):
-            sys.stderr.write("Could not find covariate file: %s\n" % (covFile))
+            logger.warning("Covariate file not found: %s", covFile)
             return
         f = open(covFile, 'r')
         keys = []

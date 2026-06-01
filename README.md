@@ -27,6 +27,7 @@ Two command-line tools and a clean Python API:
 - [Two-Stage Workflow](#two-stage-workflow)
 - [Python API](#python-api)
 - [CLI Reference](#cli-reference)
+- [Logging](#logging)
 - [Output Format](#output-format)
 - [How It Works](#how-it-works)
 - [Known Limitations](#known-limitations)
@@ -177,23 +178,23 @@ Phenotype file  (.phenos)
   SNP_ID  BETA  BETA_SD  F_STAT  P_VALUE
 ```
 
-### Typical run — with verbose logging and saved eigendecomposition
+### Typical run — with logging and saved eigendecomposition
 
 ```bash
-# Build kinship, save eigenvectors for reuse
+# Build kinship, save eigenvectors for reuse (INFO shows milestones + timing)
 uv run pylmmKinship \
   --bfile /data/study \
   --efile study.eigen \
-  --verbose \
+  --log-level INFO \
   study.kin
 
 # Run GWAS — load saved eigens, skip the O(n³) decomposition at startup
 uv run pylmmGWAS \
-  --bfile    /data/study \
-  --kfile    study.kin \
-  --eigen    study.eigen \
+  --bfile     /data/study \
+  --kfile     study.kin \
+  --eigen     study.eigen \
   --phenofile study.phenos \
-  --verbose \
+  --log-level INFO \
   results.tsv
 ```
 
@@ -201,28 +202,30 @@ uv run pylmmGWAS \
 
 ## Python API
 
-The public API is three symbols:
+The public API exports four symbols:
 
 ```python
-from pylmm3 import LMM, calculateKinship, runGWAS
+from pylmm3 import LMM, calculateKinship, runGWAS, load_snp_matrix
 ```
 
 ### Build a kinship matrix
 
 ```python
 import numpy as np
-from pylmm3 import calculateKinship
+from pylmm3 import input as plink_input, calculateKinship
 
-# W: raw genotype matrix, shape (n_samples, n_snps), np.nan for missing
-W = np.load("genotypes.npy")
-K = calculateKinship(W)              # (n, n) realized relationship matrix
-K_centered = calculateKinship(W, center=True)  # EMMA trace-normalized variant
+# Load genotypes from a PLINK binary fileset (.bed/.bim/.fam)
+reader = plink_input.plink("study", type='b')
+W = plink_input.load_snp_matrix(reader)   # (n_individuals, n_snps), np.nan for missing
+
+K = calculateKinship(W)                   # (n, n) realized relationship matrix
+np.savetxt("study.kin", K)                # plain-text format read by pylmmGWAS
 ```
 
 ### Run a GWAS scan
 
 ```python
-from pylmm3 import runGWAS
+from pylmm3 import runGWAS          # vectorized fast path (gwas_fast)
 from pylmm3 import input as plink_input
 import numpy as np
 
@@ -240,30 +243,43 @@ df = pd.DataFrame(results)
 print(df.sort_values("P_VALUE").head(10))
 ```
 
+> **Reference vs fast path:** `from pylmm3 import runGWAS` is the vectorized
+> implementation (`gwas_fast.py`), which is the same default used by the CLI.
+> The reference per-SNP loop is available as `from pylmm3.gwas import runGWAS`
+> and produces numerically identical results (max relative error < 3×10⁻⁹).
+
 ### Use the `LMM` class directly
 
 ```python
 from pylmm3 import LMM
+from pylmm3 import input as plink_input
 import numpy as np
 
-Y = np.load("phenotype.npy")
-K = np.load("kinship.npy")
+# Load genotypes and phenotypes via the PLINK reader
+reader = plink_input.plink("study", type='b', phenoFile="study.phenos")
+Y = reader.phenos[:, 0]              # first phenotype column
+
+# Kinship is plain text written by pylmmKinship / np.savetxt
+K = np.loadtxt("study.kin")
 
 # Initialize — eigendecomposition computed here if Kva/Kve not provided
-model = LMM(Y, K, verbose=True)
+model = LMM(Y, K)
 
 # Fit the null model
-h, beta, sigma, ll = model.fit(REML=True)
+model.fit(REML=True)
 print(f"Heritability: {model.optH:.3f}  σ²: {model.optSigma:.4f}")
 
-# Test a single SNP
-snp = np.load("snp_vector.npy")
-ts, ps = model.association(snp)
-print(f"t = {ts:.4f}  p = {ps:.2e}")
-
-# Visualize the heritability likelihood surface
-model.plotFit(title="Null model")
+# Test a single SNP (genotype vector, length N, values in {0.0, 0.5, 1.0, nan})
+# Apply model.nonmissing mask — LMM removes individuals with missing phenotype,
+# so the SNP vector must be subset to the same individuals before calling association().
+snp, snp_id = next(iter(reader))
+ts, ps = model.association(snp[model.nonmissing].reshape(-1, 1))
+print(f"{snp_id}: t = {ts:.4f}  p = {ps:.2e}")
 ```
+
+> **Note:** The `verbose` parameter on `LMM()` is accepted for backward compatibility but
+> is ignored. Use `PYLMM3_LOG_LEVEL=DEBUG` or `--log-level DEBUG` to see internal detail.
+> See [Logging](#logging) below.
 
 ---
 
@@ -282,7 +298,8 @@ uv run pylmmKinship [options] --[bfile | tfile | emmaSNP] <base> <outfile>
 | `--emmaSNP <file>` | one of three | EMMA-format genotype file |
 | `--emmaNumSNPs <n>` | with `--emmaSNP` | Number of SNPs in the EMMA file |
 | `-e`, `--efile <base>` | no | Save eigendecomposition to `<base>.kva` and `<base>.kve` |
-| `-v`, `--verbose` | no | Print progress to stderr |
+| `--log-level LEVEL` | no | Log verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `WARNING`) |
+| `-v`, `--verbose` | no | Shorthand for `--log-level INFO` |
 | `<outfile>` | **yes** | Output path for the kinship matrix |
 
 ### `pylmmGWAS`
@@ -316,7 +333,97 @@ uv run pylmmGWAS [options] --kfile <kin> --[bfile | tfile | emmaSNP] <base> <out
 | `--removeMissingGenotypes` | off | Drop individuals with missing genotypes per SNP instead of imputing with the mean |
 | `--noMean` | off | Suppress automatic intercept when `--covfile` is provided |
 | `--orig` | off | Use the reference per-SNP loop instead of the default vectorized scan |
-| `-v`, `--verbose` | off | Print progress to stderr |
+| `--log-level LEVEL` | `WARNING` | Log verbosity: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `-v`, `--verbose` | off | Shorthand for `--log-level INFO` |
+
+---
+
+## Logging
+
+pylmm3 uses Python's standard `logging` module throughout. All loggers are named
+`pylmm3.<module>` (e.g. `pylmm3.gwas_fast`, `pylmm3.lmm`) and propagate to the
+root logger — pylmm3 never installs its own handler in library code.
+
+### Log levels
+
+| Level | Default? | What you see |
+|-------|----------|--------------|
+| `ERROR` | always | Unrecoverable failures — bad BED magic, unknown file type |
+| `WARNING` | always | Dropped individuals, missing kinship entries, multiple optima found during heritability optimization |
+| `INFO` | off | Pipeline milestones and timing — SNP load, kinship compute, null fit, total elapsed |
+| `DEBUG` | off | Internal detail — BED bytes per SNP, eigendecomposition timing, per-SNP scan progress ticks |
+
+The default level is **WARNING** (nearly silent). Production runs produce output only
+when something is wrong.
+
+### Controlling the level
+
+**Via environment variable** — set before the process starts; no code changes needed:
+
+```bash
+PYLMM3_LOG_LEVEL=INFO  uv run pylmmGWAS --bfile study --kfile study.kin results.tsv
+PYLMM3_LOG_LEVEL=DEBUG uv run pylmmGWAS --bfile study --kfile study.kin results.tsv
+```
+
+**Via CLI flag** — overrides the env var for that invocation:
+
+```bash
+uv run pylmmGWAS --log-level INFO  ... results.tsv   # milestones + timing
+uv run pylmmGWAS --log-level DEBUG ... results.tsv   # full internal trace
+uv run pylmmGWAS --verbose         ... results.tsv   # shorthand for INFO
+```
+
+**Priority:** `--log-level` flag > `PYLMM3_LOG_LEVEL` env var > `WARNING` default.
+
+### Log format
+
+```
+[INFO   ] 2026-05-31 14:23:01.234  pylmm3.gwas_fast  Null fit: h=0.412  sigma=1.834  (2.341s)
+[WARNING] 2026-05-31 14:23:01.235  pylmm3.lmm        Found 2 optima for h — returning first (h=0.4119)
+[DEBUG  ] 2026-05-31 14:23:01.236  pylmm3.input      BED bytes per SNP: 83
+```
+
+All output goes to **stderr**. The `[LEVEL  ]` field is always 9 characters wide so
+columns align across log lines.
+
+### Using pylmm3 as a library
+
+pylmm3 follows the standard library logging contract: it never calls
+`logging.basicConfig()` or installs handlers. The calling application (your script,
+a Temporal worker, etc.) is responsible for configuring the root handler. pylmm3
+loggers propagate up normally.
+
+When `PYLMM3_LOG_LEVEL` is set and no root handler exists yet, `configure()` in
+`pylmm3.log` installs a minimal fallback handler so logs are not silently swallowed
+in un-configured environments. This fallback is a no-op if a handler is already
+present.
+
+```python
+# Your application configures logging once at startup — pylmm3 just propagates
+import logging
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+
+from pylmm3 import runGWAS   # pylmm3 loggers now flow through your handler
+```
+
+### Why `%s`-style formatting in logger calls
+
+All logger calls in pylmm3 use `%`-style arguments, not f-strings:
+
+```python
+# Correct — lazy: string is never formatted if DEBUG is disabled
+logger.debug("BED bytes per SNP: %d", self.BytestoRead)
+
+# Wrong — eager: f-string is always evaluated, even when DEBUG is off
+logger.debug(f"BED bytes per SNP: {self.BytestoRead}")
+```
+
+Python's `logging` module defers the `%` substitution to `Formatter.format()`, which
+is only called when a handler is actually going to emit the record. With f-strings the
+interpolation happens at the call site before the level check — wasted work on every
+disabled log call. In a tight loop over 250,000 SNPs, even trivial per-call overhead
+adds up. The `%s` pattern is also the style recommended in the Python logging docs and
+enforced by `pylint W1203`.
 
 ---
 
@@ -400,7 +507,7 @@ to the per-SNP path.
 |------------|--------|
 | **Memory** | K is an n×n float64 matrix where n is the number of **individuals** in the cohort. At n = 10,000 that is ~800 MB; at n = 100,000 it is ~80 GB. |
 | **Single-threaded** | No parallelism across SNPs.  |
-| **REML overflow** | `linalg.det()` overflows for covariance matrices larger than ~500×500 on the REML path. The null model always uses REML — fix pending. |
+| **REML with many covariates** | `--REML` on the per-SNP path uses `linalg.det()`, which overflows when the covariate count q ≥ ~100. The null model uses `slogdet` and is safe. In practice GWAS runs use q = 2 (intercept + genotype) and are unaffected. |
 | **`--removeMissingGenotypes` cost** | Dropping missing individuals triggers an O(n³) eigendecomposition recompute per affected SNP. Avoid this flag on cohorts with high missing-genotype rates. |
 | **Covariate missing values** | The covariate file does not support missing values. Impute externally before passing to `pylmmGWAS`. |
 | **`--kfile2`** | Accepted by the parser but immediately exits with an error — the two-kinship confounding path is not implemented. |
@@ -425,7 +532,7 @@ pylmm3 is a Python 3 port of the original
 ## License
 
 Copyright © 2015 Nicholas A. Furlotte  
-Copyright © 2024–2025 The Jackson Laboratory
+Copyright © 2024–2026 The Jackson Laboratory
 
 pylmm3 is free software licensed under the
 [GNU Affero General Public License v3.0 or later](https://www.gnu.org/licenses/agpl-3.0.en.html).

@@ -10,6 +10,7 @@ import time
 import numpy as np
 
 from pylmm3 import input
+from pylmm3.log import configure as configure_logging
 from pylmm3.gwas_fast import runGWAS as runGWAS_fast
 from pylmm3.gwas import runGWAS as runGWAS_original
 
@@ -80,8 +81,12 @@ def main():
         "--noMean", dest="noMean", default=False, action="store_true",
         help="Suppress automatic global mean covariate when --covfile is provided.")
     advancedGroup.add_argument(
+        "--log-level", dest="log_level", default=None,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Log verbosity (default: WARNING, or PYLMM3_LOG_LEVEL env var).")
+    advancedGroup.add_argument(
         "-v", "--verbose", action="store_true", dest="verbose", default=False,
-        help="Print extra info to stderr.")
+        help="Shorthand for --log-level INFO.")
 
     experimentalGroup.add_argument(
         "--kfile2", dest="kfile2",
@@ -95,8 +100,12 @@ def main():
     options = parser.parse_args()
     outFile = options.outfile
 
-    if options.verbose:
-        logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(message)s")
+    if options.log_level:
+        configure_logging(getattr(logging, options.log_level))
+    elif options.verbose:
+        configure_logging(logging.INFO)
+    else:
+        configure_logging()
 
     t_total = time.perf_counter()
 

@@ -22,9 +22,11 @@ The three model parameters are heritability (h), covariate coefficients (β), an
 phenotypic variance (σ²).
 """
 
-import sys
+import logging
 import time
 import numpy as np
+
+logger = logging.getLogger(__name__)
 from scipy import linalg
 from scipy import optimize
 from scipy import stats
@@ -101,11 +103,8 @@ class LMM:
 
         x = ~np.isnan(Y)
         x = x.reshape(-1,)
-        if x.sum() != len(Y): 
-            if self.verbose:
-                sys.stderr.write(
-                    "Removing %d missing values from Y\n" %
-                    ((~x).sum()))
+        if x.sum() != len(Y):
+            logger.debug("Removing %d missing values from Y", (~x).sum())
             Y = Y[x]
             K = K[np.ix_(x, x)]
             X0 = X0[x, :]
@@ -114,15 +113,10 @@ class LMM:
         self.nonmissing = x
 
         if Kva is None or len(Kva) == 0 or Kve is None or len(Kve) == 0:
-            if self.verbose:
-                sys.stderr.write(
-                    "Obtaining eigendecomposition for %dx%d matrix\n" %
-                    (K.shape[0], K.shape[1]))
+            logger.debug("Computing eigendecomposition for %dx%d kinship matrix", K.shape[0], K.shape[1])
             begin = time.time()
             Kva, Kve = linalg.eigh(K)
-            end = time.time()
-            if self.verbose:
-                sys.stderr.write("Total time: %0.3f\n" % (end - begin))
+            logger.debug("Eigendecomposition done in %.3fs", time.time() - begin)
 
         self.K = K
         self.Kva = Kva
@@ -133,8 +127,7 @@ class LMM:
 
         n_clamped = int((self.Kva < 1e-6).sum())
         if n_clamped:
-            if self.verbose:
-                sys.stderr.write("Clamping %d near-zero eigenvalues to 1e-6\n" % n_clamped)
+            logger.debug("Clamping %d near-zero eigenvalues to 1e-6", n_clamped)
             self.Kva[self.Kva < 1e-6] = 1e-6
 
         self.transform()
@@ -355,9 +348,7 @@ class LMM:
                 # if np.isnan(HOpt[-1][0]): HOpt[-1][0] = [self.LLs[i-1]]
 
         if len(HOpt) > 1:
-            if self.verbose:
-                sys.stderr.write(
-                    "NOTE: Found multiple optima.  Returning first...\n")
+            logger.warning("Found %d optima for h — returning first (h=%.4f)", len(HOpt), HOpt[0])
             return HOpt[0]
         elif len(HOpt) == 1:
             return HOpt[0]
