@@ -47,7 +47,7 @@ def runGWAS(
     of `batch_size` columns and processes each block with a single dgemm
     call (`Kve.T @ G`). Per-batch scalar quantities are derived from the
     Schur complement of the fixed covariate block A (inverted once at the
-    null-fit h=optH). See `docs/gwas_fast_design.md` for the full derivation.
+    null-fit h=optH).
 
     Args:
         Y:
@@ -122,7 +122,6 @@ def runGWAS(
                     L.optH, L.optSigma, time.perf_counter() - t_fit)
 
         # All quantities below are fixed at h = optH and reused every batch.
-        # Full derivation in docs/gwas_fast_design.md §3.
         h        = L.optH
         S        = 1.0 / (h * L.Kva + (1.0 - h))   # (n,) precision weights
         X0t      = L.X0t                             # (n, q) rotated covariates

@@ -76,7 +76,7 @@ def test_fit_returns_valid_heritability(kinship, phenotype):
 
 
 def test_reml_loglik_finite_with_many_covariates(rng):
-    """REML log-likelihood stays finite for large q (BUG-B / slogdet regression).
+    """REML log-likelihood stays finite for large q.
 
     The old code used linalg.det(), which overflows to inf for many
     covariates, making log(inf) - log(inf) = nan. slogdet computes the
@@ -91,7 +91,7 @@ def test_reml_loglik_finite_with_many_covariates(rng):
     Y = rng.standard_normal(n)
     X0 = rng.standard_normal((n, q))
     lmm = LMM(Y, K, X0=X0)
-    # Precondition: the naive determinant overflows, which is what BUG-B fixed.
+    # Precondition: the naive determinant overflows.
     assert np.isinf(linalg.det(lmm.X0t.T @ lmm.X0t))
     LL = lmm.LL(0.5, REML=True)[0]
     assert np.isfinite(LL)

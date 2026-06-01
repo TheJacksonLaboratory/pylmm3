@@ -16,7 +16,7 @@ def calculateKinship(
 
     When `center=False` (the CLI default), the returned K will differ
     numerically from files produced by the original pylmm if any SNPs were
-    monomorphic — see docs/kinship_denominator_fix.md.
+    monomorphic.
 
     Args:
         W:
