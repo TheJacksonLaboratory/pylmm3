@@ -246,9 +246,8 @@ class LMM:
 
             +½ [q·log(2π·σ²) + log|X.T·X| − log|X.T·Σ⁻¹·X|]
 
-        **Known issue (BUG-B):** `linalg.det()` overflows for matrices
-        larger than ~500×500. The REML path will produce `inf` on full
-        cohorts. Fix: replace with `np.linalg.slogdet`.
+        Both determinants are computed via `np.linalg.slogdet` (log-determinant
+        via LU factorization) to avoid overflow for large covariate matrices.
 
         Args:
             h:
