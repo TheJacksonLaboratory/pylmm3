@@ -1,32 +1,33 @@
-[tool.poetry]
-name = "pylmm3"
-version = "0.1.1"
-description = "Python 3 implementation of Pylmm"
-authors = ["Your Name <you@example.com>"]
-license = "AGPL-3.0-or-later"
-repository = "https://bitbucket.org/jacksonlaboratory/pylmm3/src/master"
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.9"
-numpy = "^1.21"
-scipy = "^1.7"
-
-[tool.poetry.dev-dependencies]
-pytest = "^6.0"
-
-[tool.poetry.scripts]
-pylmmGWAS = "pylmm.scripts.pylmmGWAS:main"
-pylmmKinship = "pylmm.scripts.pylmmKinship:main"
-
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
 
-# Specify the include and exclude files in the [tool.poetry] section
-include = [
-    "pylmm/**",
-    "README.md",
-    "LICENSE",
-    "pyproject.toml"
+[project]
+name = "pylmm3"
+version = "0.2.0"
+description = "Python 3 linear mixed-model solver for genome-wide association studies"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "AGPL-3.0-or-later"
+authors = [
+    { name = "Matt Vincent",  email = "matt.vincent@jax.org" },
+    { name = "Nick Sebasco",  email = "nick.sebasco@jax.org" },
 ]
+dependencies = [
+    "scipy>=1.17.1",
+]
+
+[project.urls]
+Repository = "https://bitbucket.org/jacksonlaboratory/pylmm3"
+
+[tool.setuptools.packages.find]
+include = ["pylmm3*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[project.scripts]
+pylmmGWAS = "pylmm3.scripts.pylmmGWAS:main"
+pylmmKinship = "pylmm3.scripts.pylmmKinship:main"
