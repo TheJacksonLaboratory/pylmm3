@@ -63,6 +63,52 @@ def test_eigenvalues_clamped_to_floor():
     assert (lmm.Kva >= 1e-6).all()
 
 
+def test_supplied_kva_not_mutated_by_clamping():
+    """A caller-supplied Kva is not mutated when near-zero eigenvalues clamp.
+
+    Regression for the in-place mutation bug (commit aa2a2e2): __init__ now
+    stores ``np.array(Kva, copy=True)``, so the floor-clamp writes to the copy
+    and leaves the caller's array intact. With the old ``self.Kva = Kva`` the
+    clamp would rewrite the caller's array in place.
+    """
+    from scipy import linalg
+
+    rng = np.random.default_rng(7)
+    n = 12
+    A = rng.standard_normal((n, n))
+    K = A @ A.T / n + np.eye(n)
+    Kva, Kve = linalg.eigh(K)
+    Kva[0] = 1e-9                       # force one eigenvalue below the 1e-6 floor
+    Kva_before = Kva.copy()
+
+    lmm = LMM(rng.standard_normal(n), K, Kva=Kva, Kve=Kve)
+
+    assert lmm.Kva[0] == 1e-6                          # clamp applied to the copy
+    np.testing.assert_array_equal(Kva, Kva_before)     # caller's array untouched
+
+
+def test_getmax_scans_penultimate_grid_point(monkeypatch):
+    """getMax detects a local maximum at the second-to-last grid index.
+
+    Regression for the off-by-one in the bracket-detection loop (commit
+    aa2a2e2): the old ``range(1, n - 2)`` never examined index ``n - 2``, so a
+    peak at the penultimate grid point was missed and getMax fell through to an
+    endpoint. The loop now runs ``range(1, n - 1)``. We hand getMax a grid whose
+    only interior maximum sits at ``n - 2`` and stub LL_brent to a parabola
+    minimized at 0.85 (inside the resulting bracket): the fixed code refines to
+    0.85, the buggy code would return the endpoint H[n-1] = 0.9.
+    """
+    lmm = LMM(np.random.default_rng(0).standard_normal(10), np.eye(10))
+    # Strictly increasing then a single down-step, so the sole interior local
+    # max is at index 8 (= n - 2 for n = 10).
+    lmm.LLs = np.array([0, 1, 2, 3, 4, 5, 6, 7, 9, 8], dtype=float)
+    H = np.arange(10) / 10.0                       # H[8] = 0.8; bracket (0.7, 0.9)
+    monkeypatch.setattr(lmm, "LL_brent", lambda h, X, REML: (h - 0.85) ** 2)
+
+    hmax = lmm.getMax(H, lmm.X0t, REML=False)
+    assert hmax == pytest.approx(0.85, abs=1e-4)
+
+
 def test_fit_returns_valid_heritability(kinship, phenotype):
     """fit() returns hmax in [0, 1] and populates the opt* attributes."""
     lmm = LMM(phenotype, kinship)

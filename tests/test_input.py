@@ -94,6 +94,16 @@ def test_bed_reader(bed_fileset):
     assert np.allclose(snps[0][0], _BED_LOOKUP[[0, 1, 2, 3]], equal_nan=True)
 
 
+def test_bed_reader_rejects_bad_magic(bed_fileset):
+    """An invalid PLINK BED magic number raises ValueError during iteration."""
+    with open(bed_fileset + ".bed", "wb") as f:
+        f.write(bytes([0x00, 0x00, 0x01]))           # corrupt magic bytes
+        f.write(bytes([0b11100100, 0b00011011]))
+    p = plink(bed_fileset, type="b", normGenotype=False)
+    with pytest.raises(ValueError, match="magic number"):
+        list(p)
+
+
 def test_bed_reader_normalizes_by_default(bed_fileset):
     """With normGenotype=True the yielded SNP is mean-centered."""
     p = plink(bed_fileset, type="b", normGenotype=True)
