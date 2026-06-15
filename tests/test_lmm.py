@@ -143,6 +143,18 @@ def test_reml_loglik_finite_with_many_covariates(rng):
     assert np.isfinite(LL)
 
 
+def test_getmlsoln_saturated_model_raises():
+    """A saturated design (q == N) has zero residual df, so σ² is undefined.
+
+    The old code computed Q / (N - q) = Q / 0 and returned a silent nan sigma
+    that propagated into β variances and p-values. With no residual degrees of
+    freedom the model is unidentifiable, so getMLSoln now fails loud.
+    """
+    lmm = LMM(np.arange(4.0), np.eye(4))   # N = 4
+    with pytest.raises(ValueError, match="residual degrees of freedom"):
+        lmm.getMLSoln(0.5, np.eye(4))      # X has q = 4 columns → N - q = 0
+
+
 def test_tstat_matches_scipy():
     """t = beta / sqrt(var·sigma); p = 2·sf(|t|, N-q)."""
     lmm = LMM(np.random.default_rng(2).standard_normal(25), np.eye(25))

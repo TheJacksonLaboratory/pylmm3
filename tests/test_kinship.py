@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from pylmm3.kinship import calculateKinship
+from pylmm3.kinship import calculateKinship, NoVariantSNPsError
 
 
 def test_shape_and_symmetry(genotypes):
@@ -36,8 +36,9 @@ def test_invariant_snps_dropped():
 
 
 def test_all_invariant_raises():
-    """If every SNP is monomorphic, ValueError is raised."""
-    with pytest.raises(ValueError):
+    """If every SNP is monomorphic, NoVariantSNPsError (a ValueError) is raised."""
+    assert issubclass(NoVariantSNPsError, ValueError)
+    with pytest.raises(NoVariantSNPsError):
         calculateKinship(np.ones((5, 4)))
 
 

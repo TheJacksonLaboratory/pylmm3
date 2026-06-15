@@ -518,7 +518,11 @@ PLINK filesets) live in [`tests/conftest.py`](tests/conftest.py).
 ### Kinship matrix
 
 Each SNP is imputed (missing → column mean), standardized to zero mean and unit
-variance, and invariant SNPs are dropped. The realized relationship matrix is:
+variance, and invariant SNPs are dropped. If *every* SNP is invariant (a
+genetically uniform cohort, e.g. a single strain), there is nothing to build K
+from and `calculateKinship` raises `NoVariantSNPsError` (a `ValueError`
+subclass) rather than returning a degenerate matrix. The realized relationship
+matrix is:
 
 ```
 K = W · Wᵀ / m
