@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from pylmm3.input import _BED_LOOKUP, plink, load_snp_matrix
+from pylmm3.input import _BED_LOOKUP, plink, load_snp_matrix, to_float_or_nan
 
 
 # --- pure genotype-decoding helpers -------------------------------------
@@ -156,3 +156,47 @@ def test_getphenos_na_to_nan(tmp_path, tped_fileset):
     assert p.phenos.shape == (2, 1)
     assert p.phenos[0, 0] == 1.5
     assert np.isnan(p.phenos[1, 0])
+
+
+# --- missing-token parsing (F6) -----------------------------------------
+
+def test_to_float_or_nan_recognizes_missing_tokens():
+    """Recognized missing sentinels → NaN (case-insensitive); everything else
+    parses as a float. Numeric values other than PLINK's -9 (e.g. 999) are NOT
+    treated as missing — they can be legitimate measurements."""
+    for tok in ["NA", "na", "N/A", "nan", ".", "-9", ""]:
+        assert np.isnan(to_float_or_nan(tok)), tok
+    assert to_float_or_nan("1.5") == 1.5
+    assert to_float_or_nan("0") == 0.0
+    assert to_float_or_nan("999") == 999.0
+
+
+def test_getphenos_dot_sentinel_to_nan(tmp_path, tped_fileset):
+    """A '.' missing sentinel maps to NaN instead of aborting the whole load."""
+    pheno = tmp_path / "study.phenos"
+    pheno.write_text("fam1 i1 1.5\nfam1 i2 .\n")
+    p = plink(tped_fileset, type="t", phenoFile=str(pheno), normGenotype=False)
+    assert p.phenos[0, 0] == 1.5
+    assert np.isnan(p.phenos[1, 0])
+
+
+def test_getcovariates_minus9_to_nan(tmp_path, tped_fileset):
+    """Covariate '-9' (PLINK missing code) maps to NaN, consistent with
+    getPhenos — not silently injected as a literal -9 covariate value."""
+    cov = tmp_path / "study.cov"
+    cov.write_text("fam1 i1 0.5\nfam1 i2 -9\n")
+    p = plink(tped_fileset, type="t", normGenotype=False)
+    P = p.getCovariates(str(cov))
+    assert P[0, 0] == 0.5          # indivs order: i1, i2
+    assert np.isnan(P[1, 0])
+
+
+# --- EMMA load_snp_matrix fail-loud (F3) --------------------------------
+
+def test_load_snp_matrix_emma_without_count_raises(emma_file):
+    """EMMA files carry no SNP index, so numSNPs is unknown. Without an
+    explicit num_snps the loader fails loud rather than pre-allocating with a
+    -1 dimension (the old cryptic 'negative dimensions' crash)."""
+    p = plink(emma_file, type="emma", normGenotype=False)
+    with pytest.raises(ValueError, match="num_snps"):
+        load_snp_matrix(p)

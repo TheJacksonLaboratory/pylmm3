@@ -180,7 +180,7 @@ def runGWAS(
 
     total = len(snp_ids)
     logger.info(
-        "Scanned %d SNPs in %.3fs — skipped %d (%.1f%%) due to missing genotypes or low variance",
+        "Scanned %d SNPs in %.3fs - skipped %d (%.1f%%) due to missing genotypes or low variance",
         total, time.perf_counter() - t_scan, n_skipped, 100.0 * n_skipped / total if total else 0.0,
     )
 

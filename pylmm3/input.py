@@ -39,6 +39,25 @@ logger = logging.getLogger(__name__)
 # quick lookup table for decoding PLINK .bed genotypes
 _BED_LOOKUP = np.array([0.0, np.nan, 0.5, 1.0], dtype=np.float64)
 
+# Tokens treated as missing in phenotype / covariate files → np.nan.
+# Matched case-insensitively after stripping. '-9' is PLINK's quantitative
+# missing code; numeric sentinels other than -9 (e.g. '999') are deliberately
+# excluded — they can be legitimate measured values.
+MISSING_TOKENS = frozenset({"NA", "N/A", "NAN", ".", "-9", ""})
+
+
+def to_float_or_nan(token: str) -> float:
+    """Parse a phenotype/covariate token, mapping missing sentinels to NaN.
+
+    Recognizes the tokens in ``MISSING_TOKENS`` (case-insensitive); any other
+    value is parsed as a float, raising ``ValueError`` on genuinely
+    unparseable input. Used by all phenotype and covariate parse sites so the
+    missing-value convention is consistent across them.
+    """
+    if token.strip().upper() in MISSING_TOKENS:
+        return np.nan
+    return float(token)
+
 
 class plink:
     """Iterator over SNPs in a PLINK dataset (BED, TPED, or EMMA format).
@@ -249,7 +268,7 @@ class plink:
             return self._iter_tped()
         elif self.type == 'emma':
             return self._iter_emma()
-        logger.error("Unknown SNP type %r — expected 'b', 't', or 'emma'", self.type)
+        logger.error("Unknown SNP type %r - expected 'b', 't', or 'emma'", self.type)
         return iter(())
 
     def getGenos_tped(
@@ -386,8 +405,8 @@ class plink:
         """Load the phenotype file and store results in `self.phenos`.
 
         The file is whitespace-delimited with columns
-        `fam_id indiv_id pheno1 [pheno2 ...]`. Values of `'NA'` or `'-9'`
-        are converted to `np.nan`. For BED/TPED datasets, rows are reordered
+        `fam_id indiv_id pheno1 [pheno2 ...]`. Missing-value sentinels (see
+        `MISSING_TOKENS`) are converted to `np.nan`. For BED/TPED datasets, rows are reordered
         to match `self.indivs`; individuals in the phenotype file but absent
         from the genotype dataset are silently dropped.
 
@@ -412,8 +431,7 @@ class plink:
         for line in f:
             v = line.strip().split()
             keys.append((v[0], v[1]))
-            P.append([(x.strip() == 'NA' or x.strip() == '-9')
-                     and np.nan or float(x) for x in v[2:]])
+            P.append([to_float_or_nan(x) for x in v[2:]])
         f.close()
         P = np.array(P)
 
@@ -501,7 +519,7 @@ class plink:
             `self.indivs` is empty.
         """
         if self.indivs is None or len(self.indivs) == 0:
-            logger.warning("No individuals loaded — cannot read kinship from %s", kFile)
+            logger.warning("No individuals loaded - cannot read kinship from %s", kFile)
             return
 
         logger.debug("Reading kinship matrix from %s", kFile)
@@ -557,7 +575,8 @@ class plink:
 
         Reads a whitespace-delimited file where each row is one covariate
         and each column is one individual (transposed relative to the usual
-        convention). Values of `'NA'` are converted to `np.nan`. The result
+        convention). Missing-value sentinels (see `MISSING_TOKENS`) are
+        converted to `np.nan`. The result
         is transposed before returning so that the output is `(N, num_covariates)`.
 
         Args:
@@ -570,8 +589,7 @@ class plink:
         f = open(emmaFile, 'r')
         P = []
         for line in f:
-            v = [x == 'NA' and np.nan or float(x)
-                 for x in line.strip().split()]
+            v = [to_float_or_nan(x) for x in line.strip().split()]
             P.append(v)
         f.close()
         P = np.array(P).T
@@ -590,7 +608,7 @@ class plink:
         for line in f:
             v = line.strip().split()
             keys.append((v[0], v[1]))
-            P.append([x == 'NA' and np.nan or float(x) for x in v[2:]])
+            P.append([to_float_or_nan(x) for x in v[2:]])
         f.close()
         P = np.array(P)
 
@@ -626,6 +644,15 @@ def load_snp_matrix(plink_data: "plink", num_snps: int | None = None) -> np.ndar
     plink_data.getSNPIterator()
     if num_snps is not None:
         plink_data.numSNPs = num_snps
+
+    if plink_data.numSNPs < 0:
+        # EMMA files carry no SNP index, so _count_snps() returns -1. Without an
+        # explicit count there is nothing to pre-allocate; fail loud rather than
+        # crash on a negative dimension.
+        raise ValueError(
+            "EMMA format has no SNP index; load_snp_matrix requires an "
+            "explicit num_snps for EMMA inputs."
+        )
 
     n = len(plink_data.indivs)
     W = np.empty((n, plink_data.numSNPs), dtype=np.float64)

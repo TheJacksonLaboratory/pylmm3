@@ -192,7 +192,14 @@ class LMM:
         beta = XX_i @ Xt @ self.Yt
         Yt = self.Yt - X @ beta
         Q = np.dot(Yt.T * S, Yt)
-        sigma = Q * 1.0 / (float(self.N) - float(X.shape[1]))
+        df = float(self.N) - float(X.shape[1])
+        if df <= 0:
+            raise ValueError(
+                "saturated model: %d covariates for %d samples leaves no "
+                "residual degrees of freedom (N - q = %g); sigma^2 is "
+                "undefined." % (X.shape[1], self.N, df)
+            )
+        sigma = Q * 1.0 / df
         return beta, sigma, Q, XX_i, XX
 
     def LL_brent(
@@ -347,7 +354,7 @@ class LMM:
                 # if np.isnan(HOpt[-1][0]): HOpt[-1][0] = [self.LLs[i-1]]
 
         if len(HOpt) > 1:
-            logger.warning("Found %d optima for h — returning first (h=%.4f)", len(HOpt), HOpt[0])
+            logger.warning("Found %d optima for h - returning first (h=%.4f)", len(HOpt), HOpt[0])
             return HOpt[0]
         elif len(HOpt) == 1:
             return HOpt[0]

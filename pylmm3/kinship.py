@@ -3,6 +3,15 @@
 import numpy as np
 
 
+class NoVariantSNPsError(ValueError):
+    """Raised when every SNP column is invariant, leaving no SNP to build K from.
+
+    Subclasses ``ValueError`` so existing ``except ValueError`` callers keep
+    working, while callers that can treat a monomorphic cohort as a skippable
+    (rather than fatal) condition can catch this type precisely.
+    """
+
+
 def calculateKinship(
     W: np.ndarray,
     center: bool = False,
@@ -32,8 +41,9 @@ def calculateKinship(
         Realized relationship matrix of shape `(n_samples, n_samples)`.
 
     Raises:
-        ValueError: If every SNP column is invariant (zero variance after
-            imputation), leaving no valid SNPs to build K from.
+        NoVariantSNPsError: If every SNP column is invariant (zero variance
+            after imputation), leaving no valid SNPs to build K from. This is a
+            ``ValueError`` subclass.
     """
     n = W.shape[0]
     W = W.astype(np.float64, copy=True)
@@ -46,7 +56,7 @@ def calculateKinship(
 
     keep = col_vars > 0
     if not keep.any():
-        raise ValueError("No valid (non-invariant) SNPs found")
+        raise NoVariantSNPsError("No valid (non-invariant) SNPs found")
 
     W = (W[:, keep] - col_means[keep]) / np.sqrt(col_vars[keep])
     K = (W @ W.T) / W.shape[1]
