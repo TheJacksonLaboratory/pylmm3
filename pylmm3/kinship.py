@@ -67,3 +67,68 @@ def calculateKinship(
 
     return K
 
+
+def calculate_kinship_blocked(
+    blocks,
+    n_samples: int,
+    center: bool = False,
+) -> np.ndarray:
+    """Compute the RRM/GRM by accumulating SNP column-blocks, bounding memory.
+
+    Equivalent to ``calculateKinship`` on the horizontally-concatenated blocks,
+    but holds only the running ``n_samples × n_samples`` accumulator plus one
+    block at a time rather than the full ``n_samples × n_snps`` matrix. The
+    result is mathematically identical because per-SNP standardization is
+    column-separable and the Gram matrix is a sum of per-SNP outer products;
+    the divisor is the total number of valid SNPs retained across all blocks,
+    and ``center`` normalization is applied once to the finished matrix.
+
+    Args:
+        blocks:
+            Iterable of raw (un-normalized) SNP column-blocks, each of shape
+            ``(n_samples, block_width)`` with missing values encoded as
+            ``np.nan``. Blocks are not mutated.
+        n_samples:
+            Number of individuals (the dimension of the returned matrix).
+        center:
+            If ``True``, apply EMMA-style trace normalization so that
+            ``trace(K) == n_samples - 1`` (matches ``calculateKinship``).
+
+    Returns:
+        Realized relationship matrix of shape ``(n_samples, n_samples)``.
+
+    Raises:
+        NoVariantSNPsError: If every SNP across all blocks is invariant,
+            leaving no valid SNPs to build K from.
+    """
+    K = np.zeros((n_samples, n_samples), dtype=np.float64)
+    kept_total = 0
+
+    for block in blocks:
+        B = np.array(block, dtype=np.float64)  # copy: never impute into caller's data
+
+        col_means = np.nanmean(B, axis=0)
+        col_vars  = np.nanvar(B, axis=0)
+
+        nan_rows, nan_cols = np.where(np.isnan(B))
+        B[nan_rows, nan_cols] = col_means[nan_cols]
+
+        keep = col_vars > 0
+        if not keep.any():
+            continue
+
+        Bs = (B[:, keep] - col_means[keep]) / np.sqrt(col_vars[keep])
+        K += Bs @ Bs.T
+        kept_total += int(keep.sum())
+
+    if kept_total == 0:
+        raise NoVariantSNPsError("No valid (non-invariant) SNPs found")
+
+    K /= kept_total
+
+    if center:
+        S = np.trace(K) - n_samples * K.mean()
+        return (n_samples - 1) * K / S
+
+    return K
+

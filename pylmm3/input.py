@@ -665,3 +665,32 @@ def load_snp_matrix(plink_data: "plink", num_snps: int | None = None) -> np.ndar
         W[:, j] = snp
         j += 1
     return W[:, :j]
+
+
+def iter_snp_blocks(plink_data: "plink", block_size: int) -> "Iterator[np.ndarray]":
+    """Stream raw SNP genotypes as (n_samples, block_size) column-blocks.
+
+    Like `load_snp_matrix`, this yields un-normalized dosages (missing values
+    as `np.nan`) and sets `plink_data.normGenotype` to False so the blocks are
+    suitable for `pylmm3.kinship.calculate_kinship_blocked`. Unlike the
+    matrix loader it never materializes the full N×M matrix: each block is
+    built from at most `block_size` consecutive SNPs and the final block holds
+    the remainder.
+
+    Args:
+        plink_data: An initialized plink object (BED, TPED, or EMMA format).
+        block_size: Number of SNP columns per yielded block.
+
+    Yields:
+        float64 arrays of shape (n_samples, b), where b == block_size for every
+        block except possibly the last.
+    """
+    plink_data.normGenotype = False
+    cols = []
+    for snp, _ in plink_data:
+        cols.append(snp)
+        if len(cols) == block_size:
+            yield np.column_stack(cols)
+            cols = []
+    if cols:
+        yield np.column_stack(cols)

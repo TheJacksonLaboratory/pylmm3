@@ -3,7 +3,13 @@
 import numpy as np
 import pytest
 
-from pylmm3.input import _BED_LOOKUP, plink, load_snp_matrix, to_float_or_nan
+from pylmm3.input import (
+    _BED_LOOKUP,
+    plink,
+    load_snp_matrix,
+    iter_snp_blocks,
+    to_float_or_nan,
+)
 
 
 # --- pure genotype-decoding helpers -------------------------------------
@@ -200,3 +206,24 @@ def test_load_snp_matrix_emma_without_count_raises(emma_file):
     p = plink(emma_file, type="emma", normGenotype=False)
     with pytest.raises(ValueError, match="num_snps"):
         load_snp_matrix(p)
+
+
+# --- streamed SNP column-blocks (#1) ------------------------------------
+
+def test_iter_snp_blocks_reconstructs_full_matrix(bed_fileset):
+    """Concatenated blocks equal the raw matrix load_snp_matrix builds."""
+    full = load_snp_matrix(plink(bed_fileset, type="b", normGenotype=False))
+    p = plink(bed_fileset, type="b")  # normGenotype default True; loader must override
+    blocks = list(iter_snp_blocks(p, block_size=1))
+    assert np.allclose(np.column_stack(blocks), full, equal_nan=True)
+    assert p.normGenotype is False  # raw dosages, like load_snp_matrix
+
+
+def test_iter_snp_blocks_respects_block_width(bed_fileset):
+    """Each block is block_size wide; the final block holds the remainder."""
+    # 2 SNPs, width 1 → two 1-wide blocks
+    blocks = list(iter_snp_blocks(plink(bed_fileset, type="b"), block_size=1))
+    assert [b.shape for b in blocks] == [(4, 1), (4, 1)]
+    # block wider than the dataset → a single block of all SNPs
+    blocks = list(iter_snp_blocks(plink(bed_fileset, type="b"), block_size=5))
+    assert [b.shape for b in blocks] == [(4, 2)]
