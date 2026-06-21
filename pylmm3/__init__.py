@@ -18,6 +18,7 @@ __version__ = get_version()
 __all__ = [
     "LMM",
     "calculateKinship",
+    "calculateKinshipBlocks",
     "NoVariantSNPsError",
     "runGWAS",
     "load_snp_matrix",

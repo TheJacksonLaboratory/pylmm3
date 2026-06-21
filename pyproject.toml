@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pylmm3"
-version = "0.2.1"
+version = "0.2.2"
 description = "Python 3 linear mixed-model solver for genome-wide association studies"
 readme = "README.md"
 requires-python = ">=3.12"

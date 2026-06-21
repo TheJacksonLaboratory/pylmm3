@@ -68,7 +68,7 @@ def calculateKinship(
     return K
 
 
-def calculate_kinship_blocked(
+def calculateKinshipBlocks(
     blocks,
     n_samples: int,
     center: bool = False,
