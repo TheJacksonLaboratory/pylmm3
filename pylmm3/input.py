@@ -672,7 +672,7 @@ def iter_snp_blocks(plink_data: "plink", block_size: int) -> "Iterator[np.ndarra
 
     Like `load_snp_matrix`, this yields un-normalized dosages (missing values
     as `np.nan`) and sets `plink_data.normGenotype` to False so the blocks are
-    suitable for `pylmm3.kinship.calculate_kinship_blocked`. Unlike the
+    suitable for `pylmm3.kinship.calculateKinshipBlocks`. Unlike the
     matrix loader it never materializes the full N×M matrix: each block is
     built from at most `block_size` consecutive SNPs and the final block holds
     the remainder.
