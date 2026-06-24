@@ -2,6 +2,7 @@
 
 **A fast, lightweight linear mixed-model solver for genome-wide association studies.**
 
+![CI](https://github.com/TheJacksonLaboratory/pylmm3/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-green)
 
