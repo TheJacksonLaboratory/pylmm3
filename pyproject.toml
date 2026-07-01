@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://bitbucket.org/jacksonlaboratory/pylmm3"
+Repository = "https://github.com/TheJacksonLaboratory/pylmm3"
 
 [tool.setuptools.packages.find]
 include = ["pylmm3*"]

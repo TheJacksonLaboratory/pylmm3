@@ -41,7 +41,7 @@ Two command-line tools and a clean Python API:
 ## Quick Start
 
 ```bash
-git clone git@bitbucket.org:jacksonlaboratory/pylmm3.git
+git clone https://github.com/TheJacksonLaboratory/pylmm3.git
 cd pylmm3
 uv sync
 
@@ -73,7 +73,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 environment. This is the right path for anyone who just wants to run GWAS jobs.
 
 ```bash
-uv tool install git+https://bitbucket.org/jacksonlaboratory/pylmm3.git
+uv tool install git+https://github.com/TheJacksonLaboratory/pylmm3.git
 
 # Commands are now available globally:
 pylmmKinship --bfile /data/study study.kin
@@ -86,10 +86,10 @@ pylmmGWAS    --bfile /data/study --kfile study.kin --phenofile study.phenos out.
 
 ```bash
 # uv project
-uv add git+https://bitbucket.org/jacksonlaboratory/pylmm3.git
+uv add git+https://github.com/TheJacksonLaboratory/pylmm3.git
 
 # pip / any other tool
-pip install git+https://bitbucket.org/jacksonlaboratory/pylmm3.git
+pip install git+https://github.com/TheJacksonLaboratory/pylmm3.git
 ```
 
 Then import:
@@ -103,7 +103,7 @@ from pylmm3 import LMM, calculateKinship, runGWAS
 ### Tier 3 — Local development (clone and edit source)
 
 ```bash
-git clone git@bitbucket.org:jacksonlaboratory/pylmm3.git
+git clone https://github.com/TheJacksonLaboratory/pylmm3.git
 cd pylmm3
 uv sync          # creates .venv, installs all dependencies + pylmm3 in editable mode
 ```
