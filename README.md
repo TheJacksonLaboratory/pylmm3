@@ -33,6 +33,7 @@ Two command-line tools and a clean Python API:
 - [Testing](#testing)
 - [How It Works](#how-it-works)
 - [Known Limitations](#known-limitations)
+- [Releasing](#releasing)
 - [Authors](#authors)
 - [License](#license)
 
@@ -571,6 +572,44 @@ to the per-SNP path.
 | **`--removeMissingGenotypes` cost** | Dropping missing individuals triggers an O(n³) eigendecomposition recompute per affected SNP. Avoid this flag on cohorts with high missing-genotype rates. |
 | **Covariate missing values** | The covariate file does not support missing values. Impute externally before passing to `pylmmGWAS`. |
 | **`--kfile2`** | Accepted by the parser but immediately exits with an error — the two-kinship confounding path is not implemented. |
+
+---
+
+## Releasing
+
+pylmm3 is published to **public PyPI** (https://pypi.org/project/pylmm3/). Releases are
+automated by `.github/workflows/release.yml` - **a version bump is a release**.
+
+### How a release reaches PyPI (automatic)
+
+1. Bump `version` in `pyproject.toml` and push to `main`.
+2. GitHub Actions runs the tests, `uv build`s the wheel + sdist, and publishes to PyPI.
+3. Publishing is **keyless**: GitHub's OIDC token is exchanged for a one-time PyPI upload
+   token via [Trusted Publishing](https://docs.pypi.org/trusted-publishers/). No API token
+   or secret is stored in the repo.
+4. On success the commit is tagged `vX.Y.Z` and the tag is pushed.
+
+Pushing to `main` without changing the version does nothing: the workflow triggers only on
+changes to `pyproject.toml`, and its guard skips any version whose tag already exists.
+
+### How to cut a release (maintainers)
+
+```bash
+# 1. Bump the version in pyproject.toml:
+#      full release:  version = "0.2.4"
+#      pre-release:   version = "0.2.4a1"   (PEP 440: aN / bN / rcN / .devN)
+# 2. Commit and push to main:
+git add pyproject.toml
+git commit -m "version bump"
+git push origin main
+# 3. Watch it: Actions tab -> "Release to PyPI" -> Test -> Build -> Publish -> Tag vX.Y.Z
+```
+
+Consumers install a normal release with `pip install pylmm3` (or `uv add pylmm3`); a
+pre-release needs `pip install --pre pylmm3` or an explicit pin (`pylmm3==0.2.4a1`).
+
+The one-time PyPI setup (Trusted Publishing), the API-token fallback, and how to test an
+unreleased version against downstream projects are in [RELEASING.md](RELEASING.md).
 
 ---
 

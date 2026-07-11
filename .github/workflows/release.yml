@@ -60,12 +60,16 @@ jobs:
 
       # Keyless publish. `always` makes a misconfigured trusted publisher fail loudly
       # instead of silently falling back. For the API-token fallback, see RELEASING.md.
+      # --check-url lets a re-run skip files already on PyPI (e.g. if a later step failed
+      # after a successful upload) instead of erroring on the immutable duplicate.
       - name: Publish to PyPI (Trusted Publishing)
         if: steps.guard.outputs.release == 'true'
-        run: uv publish --trusted-publishing always
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/
 
       - name: Tag the release
         if: steps.guard.outputs.release == 'true'
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "v${{ steps.v.outputs.version }}" -m "Release ${{ steps.v.outputs.version }}"
           git push origin "v${{ steps.v.outputs.version }}"
