@@ -1,0 +1,71 @@
+name: Release to PyPI
+
+# A version bump IS the release. Edit `version` in pyproject.toml, push to main,
+# and this workflow tests, publishes to PyPI, and tags the commit.
+#
+# Auth is KEYLESS via PyPI Trusted Publishing (OIDC): GitHub mints a short-lived
+# identity token and PyPI trades it for a one-time upload token. No secret is stored
+# in this repo and there is nothing to rotate. The one-time PyPI-side setup, and an
+# API-token fallback for before that setup exists, are documented in RELEASING.md.
+
+on:
+  workflow_dispatch:        # manual re-run
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml      # only a version bump can trigger a release
+
+permissions:
+  contents: write           # push the release tag
+  id-token: write           # mint the OIDC token PyPI Trusted Publishing consumes
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # need existing tags for the re-release guard
+
+      - name: Install uv + Python
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Read version from pyproject.toml
+        id: v
+        run: |
+          VERSION="$(grep -m1 -E '^version[[:space:]]*=' pyproject.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if this version was already released
+        id: guard
+        run: |
+          if git rev-parse "v${{ steps.v.outputs.version }}" >/dev/null 2>&1; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "Tag v${{ steps.v.outputs.version }} already exists -- bump version in pyproject.toml to release. Nothing to do."
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test
+        if: steps.guard.outputs.release == 'true'
+        run: |
+          uv sync --dev
+          uv run pytest
+
+      - name: Build
+        if: steps.guard.outputs.release == 'true'
+        run: uv build
+
+      # Keyless publish. `always` makes a misconfigured trusted publisher fail loudly
+      # instead of silently falling back. For the API-token fallback, see RELEASING.md.
+      - name: Publish to PyPI (Trusted Publishing)
+        if: steps.guard.outputs.release == 'true'
+        run: uv publish --trusted-publishing always
+
+      - name: Tag the release
+        if: steps.guard.outputs.release == 'true'
+        run: |
+          git tag -a "v${{ steps.v.outputs.version }}" -m "Release ${{ steps.v.outputs.version }}"
+          git push origin "v${{ steps.v.outputs.version }}"
